@@ -75,19 +75,12 @@ class TargetSalesforce(Target):
     ).to_dict()
     default_sink_class = SalesforceSink
 
-    def __init__(
-        self,
-        *,
-        config=None,
-        parse_env_config: bool = False,
-        validate_config: bool = True,
-    ) -> None:
-        super().__init__(
-            config=config,
-            parse_env_config=parse_env_config,
-            validate_config=validate_config,
-        )
-        print(self.config.get("is_sandbox"))
+    def __init__(self, **kwargs) -> None:
+        # Forward every argument so the target keeps accepting whatever the SDK
+        # base class accepts. The SDK adds keyword arguments between releases,
+        # and repeating the signature here makes each addition a break.
+        super().__init__(**kwargs)
+
         if self.config.get("is_sandbox") is not None:
             raise ConfigValidationError(
                 "is_sandbox has been deprecated, use domain. is_sandbox-False = 'login', is_sandbox-True = 'test'"
