@@ -41,7 +41,7 @@ class SalesforceSink(BatchSink):
         self.target = target
         self._sf_client = None
         self._batched_records: list[dict]
-        self._object_fields: dict[str, ObjectField] = None
+        self._object_fields: dict[str, ObjectField] | None = None
         self._validate_schema_against_object()
 
     @property

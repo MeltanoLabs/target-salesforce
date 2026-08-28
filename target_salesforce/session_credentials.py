@@ -47,10 +47,13 @@ class Session:
 
 def parse_credentials(config: dict) -> OAuthCredentials | PasswordCredentials:
     """Return the credentials that the config holds a complete set of."""
-    for cls in reversed((OAuthCredentials, PasswordCredentials)):
-        creds = cls(*(config.get(key) for key in cls._fields))
-        if all(creds):
-            return creds
+    if all(config.get(field) for field in PasswordCredentials._fields):
+        return PasswordCredentials(
+            *(config[field] for field in PasswordCredentials._fields)
+        )
+
+    if all(config.get(field) for field in OAuthCredentials._fields):
+        return OAuthCredentials(*(config[field] for field in OAuthCredentials._fields))
 
     msg = (
         "Cannot create credentials from config. Target supports OAuth and "
