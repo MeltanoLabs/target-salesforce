@@ -52,6 +52,29 @@ class TargetSalesforce(Target):
             ),
         ),
         th.Property(
+            "jwt_client_id",
+            th.StringType,
+            secret=True,
+            description=(
+                "JWT bearer: Salesforce Connected/External Client App consumer "
+                "key (iss claim)."
+            ),
+        ),
+        th.Property(
+            "jwt_username",
+            th.StringType,
+            description=("JWT bearer: Salesforce username to impersonate (sub claim)."),
+        ),
+        th.Property(
+            "jwt_private_key",
+            th.StringType,
+            secret=True,
+            description=(
+                "JWT bearer: RSA private key PEM matching the cert uploaded to "
+                "the Connected/External Client App."
+            ),
+        ),
+        th.Property(
             "domain",
             th.StringType,
             default="login",

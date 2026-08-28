@@ -1,6 +1,6 @@
 [project]
 name = "target-salesforce"
-version = "2.0.0"
+version = "2.2.0"
 description = "`target-salesforce` is a Singer target for Salesforce, built with the Meltano SDK for Singer Targets."
 readme = "README.md"
 authors = [{ name = "Dan Ladd" }]
@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+    "pyjwt[crypto]~=2.13.0",
     "requests~=2.34.2",
     "simple-salesforce~=1.12.10",
     "singer-sdk~=0.54.5",

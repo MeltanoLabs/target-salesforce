@@ -2,9 +2,11 @@
 
 import abc
 import logging
+import time
 from dataclasses import dataclass
 from typing import NamedTuple
 
+import jwt
 import requests
 from simple_salesforce import SalesforceLogin
 
@@ -36,6 +38,14 @@ class PasswordCredentials(NamedTuple):
     security_token: str
 
 
+class JWTCredentials(NamedTuple):
+    """Credentials for the OAuth JWT bearer flow."""
+
+    jwt_client_id: str
+    jwt_username: str
+    jwt_private_key: str
+
+
 @dataclass
 class Session:
     """An authenticated Salesforce session."""
@@ -45,19 +55,24 @@ class Session:
     instance_url: str | None = None
 
 
-def parse_credentials(config: dict) -> OAuthCredentials | PasswordCredentials:
+def parse_credentials(
+    config: dict,
+) -> JWTCredentials | OAuthCredentials | PasswordCredentials:
     """Return the credentials that the config holds a complete set of."""
+    if all(config.get(field) for field in JWTCredentials._fields):
+        return JWTCredentials(*(config[field] for field in JWTCredentials._fields))
+
+    if all(config.get(field) for field in OAuthCredentials._fields):
+        return OAuthCredentials(*(config[field] for field in OAuthCredentials._fields))
+
     if all(config.get(field) for field in PasswordCredentials._fields):
         return PasswordCredentials(
             *(config[field] for field in PasswordCredentials._fields)
         )
 
-    if all(config.get(field) for field in OAuthCredentials._fields):
-        return OAuthCredentials(*(config[field] for field in OAuthCredentials._fields))
-
     msg = (
-        "Cannot create credentials from config. Target supports OAuth and "
-        "Password authentication."
+        "Cannot create credentials from config. Target supports JWT bearer, "
+        "OAuth refresh-token, and username/password authentication."
     )
     raise InvalidCredentialsError(msg)
 
@@ -77,6 +92,9 @@ class SalesforceAuth(metaclass=abc.ABCMeta):
     @classmethod
     def from_credentials(cls, credentials, **kwargs) -> "SalesforceAuth":
         """Return the login flow that matches the credentials."""
+        if isinstance(credentials, JWTCredentials):
+            return SalesforceAuthJWT(credentials, **kwargs)
+
         if isinstance(credentials, OAuthCredentials):
             return SalesforceAuthOAuth(credentials, **kwargs)
 
@@ -119,6 +137,62 @@ class SalesforceAuthOAuth(SalesforceAuth):
             auth = resp.json()
 
             LOGGER.info("OAuth2 login successful")
+            return Session(auth["access_token"], instance_url=auth["instance_url"])
+        except Exception as e:
+            error_message = str(e)
+            if resp is not None:
+                error_message = (
+                    error_message + f", Response from Salesforce: {resp.text}"
+                )
+            raise SalesforceLoginError(error_message) from e
+
+
+class SalesforceAuthJWT(SalesforceAuth):
+    """Login with a signed JWT bearer assertion."""
+
+    # Salesforce rejects an assertion whose `exp` claim sits more than five
+    # minutes ahead, so a longer lifetime cannot be used.
+    JWT_LIFETIME_SECONDS = 300
+
+    @property
+    def _login_url(self):
+        return f"https://{self.domain}.salesforce.com/services/oauth2/token"
+
+    @property
+    def _audience(self):
+        return f"https://{self.domain}.salesforce.com"
+
+    def _build_assertion(self):
+        claims = {
+            "iss": self._credentials.jwt_client_id,
+            "sub": self._credentials.jwt_username,
+            "aud": self._audience,
+            "exp": int(time.time()) + self.JWT_LIFETIME_SECONDS,
+        }
+        return jwt.encode(claims, self._credentials.jwt_private_key, algorithm="RS256")
+
+    def login(self) -> Session:
+        """Attempt to login and return Session info."""
+        # See the note in SalesforceAuthOAuth.login about testing against None.
+        resp = None
+
+        try:
+            LOGGER.info("Attempting login via OAuth2 JWT Bearer")
+
+            resp = requests.post(
+                self._login_url,
+                data={
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    "assertion": self._build_assertion(),
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=LOGIN_TIMEOUT_SECONDS,
+            )
+
+            resp.raise_for_status()
+            auth = resp.json()
+
+            LOGGER.info("OAuth2 JWT Bearer login successful")
             return Session(auth["access_token"], instance_url=auth["instance_url"])
         except Exception as e:
             error_message = str(e)
