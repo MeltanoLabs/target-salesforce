@@ -97,6 +97,11 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
     def login(self):
         """Attempt to login and return Session info."""
+        # `requests.post` can raise before it binds a response, and a response
+        # that carries an error status is falsy. Test against None so that the
+        # body reaches the caller for every failure that produced one.
+        resp = None
+
         try:
             LOGGER.info("Attempting login via OAuth2")
 
@@ -114,7 +119,7 @@ class SalesforceAuthOAuth(SalesforceAuth):
             return Session(auth["access_token"], instance_url=auth["instance_url"])
         except Exception as e:
             error_message = str(e)
-            if resp:
+            if resp is not None:
                 error_message = (
                     error_message + f", Response from Salesforce: {resp.text}"
                 )
