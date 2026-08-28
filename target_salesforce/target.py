@@ -15,8 +15,8 @@ class TargetSalesforce(Target):
     name = "target-salesforce"
     config_jsonschema = th.PropertiesList(
         th.Property(
-            "client_id", 
-            th.StringType, 
+            "client_id",
+            th.StringType,
             description="OAuth client_id",
         ),
         th.Property(
@@ -32,14 +32,14 @@ class TargetSalesforce(Target):
             description="OAuth refresh_token",
         ),
         th.Property(
-            "username", 
-            th.StringType, 
+            "username",
+            th.StringType,
             description="User/password username",
         ),
         th.Property(
-            "password", 
-            th.StringType, 
-            secret=True, 
+            "password",
+            th.StringType,
+            secret=True,
             description="User/password username",
         ),
         th.Property(
@@ -52,7 +52,7 @@ class TargetSalesforce(Target):
             "domain",
             th.StringType,
             default="login",
-            description="Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain."
+            description="Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain.",
         ),
         th.Property(
             "is_sandbox",
@@ -75,8 +75,20 @@ class TargetSalesforce(Target):
     ).to_dict()
     default_sink_class = SalesforceSink
 
-    def __init__(self, *, config= None, parse_env_config: bool = False, validate_config: bool = True) -> None:
-        super().__init__(config=config, parse_env_config=parse_env_config, validate_config=validate_config)
+    def __init__(
+        self,
+        *,
+        config=None,
+        parse_env_config: bool = False,
+        validate_config: bool = True,
+    ) -> None:
+        super().__init__(
+            config=config,
+            parse_env_config=parse_env_config,
+            validate_config=validate_config,
+        )
         print(self.config.get("is_sandbox"))
         if self.config.get("is_sandbox") is not None:
-            raise ConfigValidationError("is_sandbox has been deprecated, use domain. is_sandbox-False = 'login', is_sandbox-True = 'test'")
+            raise ConfigValidationError(
+                "is_sandbox has been deprecated, use domain. is_sandbox-False = 'login', is_sandbox-True = 'test'"
+            )

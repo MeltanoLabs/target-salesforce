@@ -63,7 +63,10 @@ class SalesforceSink(BatchSink):
         for field in self.schema.get("properties").items():
             try:
                 validate_schema_field(
-                    field, self.object_fields, self.config.get("action"), self.stream_name
+                    field,
+                    self.object_fields,
+                    self.config.get("action"),
+                    self.stream_name,
                 )
             except InvalidStreamSchema as e:
                 raise InvalidStreamSchema(

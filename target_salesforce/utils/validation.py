@@ -1,9 +1,8 @@
 """Currently Validates the following:
-    1. Field exists in the SF Object (excluding _sdc metadata)
-    2. If the config action is update, that the field can be updated
-    3. If the config action is insert, that the field can be created
-    4. If the config action is upsert, that the field can be created and updated"""
-
+1. Field exists in the SF Object (excluding _sdc metadata)
+2. If the config action is update, that the field can be updated
+3. If the config action is insert, that the field can be created
+4. If the config action is upsert, that the field can be created and updated"""
 
 from collections import namedtuple
 from typing import Dict
@@ -32,7 +31,9 @@ def validate_schema_field(
             return
 
     if not sf_field:
-        raise InvalidStreamSchema(f"{field_name} does not exist in your {stream_name} Object")
+        raise InvalidStreamSchema(
+            f"{field_name} does not exist in your {stream_name} Object"
+        )
 
     if action in ["update", "upsert"]:
         if not sf_field.updateable:
