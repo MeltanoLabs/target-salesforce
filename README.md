@@ -25,7 +25,7 @@ You must authenticate with OAuth (`client_id`, `client_secret`, and `refresh_tok
 | password            | False     | None    | User/password password |
 | security_token      | False     | None    | User/password generated security token. Reset under your Account Settings |
 | domain              | False     | login   | Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain. |
-| action              | False     | update  | How to handle incomming records by default (insert/update/upsert/delete/hard_delete) |
+| action              | False     | update  | How to handle incoming records by default (insert/update/upsert/delete/hard_delete) |
 | allow_failures      | False     | False   | Allows the target to continue persisting if a record fails to commit |
 
 A full list of supported settings and capabilities for this
