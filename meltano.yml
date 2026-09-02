@@ -27,28 +27,34 @@ plugins:
       kind: string
       description: "OAuth client_id"
     - name: client_secret
-      kind: password
+      kind: string
+      sensitive: true
       description: "OAuth client_secret"
     - name: refresh_token
-      kind: password
+      kind: string
+      sensitive: true
       description: "OAuth refresh_token"
     - name: username
       kind: string
       description: "User/password username"
     - name: password
-      kind: password
+      kind: string
+      sensitive: true
       description: "User/password password"
     - name: security_token
-      kind: password
+      kind: string
+      sensitive: true
       description: "User/password generated security token. Reset under your Account Settings"
     - name: jwt_client_id
-      kind: password
+      kind: string
+      sensitive: true
       description: "JWT bearer: Salesforce Connected/External Client App consumer key (iss claim)."
     - name: jwt_username
       kind: string
       description: "JWT bearer: Salesforce username to impersonate (sub claim)."
     - name: jwt_private_key
-      kind: password
+      kind: string
+      sensitive: true
       description: "JWT bearer: RSA private key PEM matching the cert uploaded to the Connected/External Client App."
     - name: domain
       kind: string
