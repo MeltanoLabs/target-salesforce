@@ -1,62 +1,97 @@
+"""Salesforce login flows and session handling."""
+
 import abc
 import logging
 import time
-from collections import namedtuple
 from dataclasses import dataclass
-from typing import Union
+from typing import NamedTuple
 
 import jwt
 import requests
 from simple_salesforce import SalesforceLogin
 
+from target_salesforce.utils.exceptions import (
+    InvalidCredentialsError,
+    SalesforceLoginError,
+)
+
 LOGGER = logging.getLogger(__name__)
 
-OAuthCredentials = namedtuple(
-    "OAuthCredentials", ("client_id", "client_secret", "refresh_token")
-)
+# No record can be written until the login returns, so a login that hangs
+# stalls the whole run.
+LOGIN_TIMEOUT_SECONDS = 30
 
-PasswordCredentials = namedtuple(
-    "PasswordCredentials", ("username", "password", "security_token")
-)
 
-JWTCredentials = namedtuple(
-    "JWTCredentials", ("jwt_client_id", "jwt_username", "jwt_private_key")
-)
+class OAuthCredentials(NamedTuple):
+    """Credentials for the OAuth refresh token flow."""
+
+    client_id: str
+    client_secret: str
+    refresh_token: str
+
+
+class PasswordCredentials(NamedTuple):
+    """Credentials for the username and password flow."""
+
+    username: str
+    password: str
+    security_token: str
+
+
+class JWTCredentials(NamedTuple):
+    """Credentials for the OAuth JWT bearer flow."""
+
+    jwt_client_id: str
+    jwt_username: str
+    jwt_private_key: str
 
 
 @dataclass
 class Session:
+    """An authenticated Salesforce session."""
+
     session_id: str
-    instance: str = None
-    instance_url: str = None
+    instance: str | None = None
+    instance_url: str | None = None
 
 
 def parse_credentials(
     config: dict,
-) -> Union[JWTCredentials, OAuthCredentials, PasswordCredentials]:
-    for cls in (JWTCredentials, OAuthCredentials, PasswordCredentials):
-        creds = cls(*(config.get(key) for key in cls._fields))
-        if all(creds):
-            return creds
+) -> JWTCredentials | OAuthCredentials | PasswordCredentials:
+    """Return the credentials that the config holds a complete set of."""
+    if all(config.get(field) for field in JWTCredentials._fields):
+        return JWTCredentials(*(config[field] for field in JWTCredentials._fields))
 
-    raise Exception(
-        "Cannot create credentials from config. Target supports JWT bearer, OAuth refresh-token, "
-        "and username/password authentication."
+    if all(config.get(field) for field in OAuthCredentials._fields):
+        return OAuthCredentials(*(config[field] for field in OAuthCredentials._fields))
+
+    if all(config.get(field) for field in PasswordCredentials._fields):
+        return PasswordCredentials(
+            *(config[field] for field in PasswordCredentials._fields)
+        )
+
+    msg = (
+        "Cannot create credentials from config. Target supports JWT bearer, "
+        "OAuth refresh-token, and username/password authentication."
     )
+    raise InvalidCredentialsError(msg)
 
 
 class SalesforceAuth(metaclass=abc.ABCMeta):
-    def __init__(self, credentials, domain):
+    """Base class for the Salesforce login flows."""
+
+    def __init__(self, credentials, domain) -> None:
+        """Hold the credentials and the domain to login against."""
         self.domain = domain
         self._credentials = credentials
 
     @abc.abstractmethod
     def login(self) -> Session:
-        """Attempt to login and return Session info"""
-        pass
+        """Attempt to login and return Session info."""
 
     @classmethod
-    def from_credentials(cls, credentials, **kwargs):
+    def from_credentials(cls, credentials, **kwargs) -> "SalesforceAuth":
+        """Return the login flow that matches the credentials."""
         if isinstance(credentials, JWTCredentials):
             return SalesforceAuthJWT(credentials, **kwargs)
 
@@ -66,10 +101,13 @@ class SalesforceAuth(metaclass=abc.ABCMeta):
         if isinstance(credentials, PasswordCredentials):
             return SalesforceAuthPassword(credentials, **kwargs)
 
-        raise Exception("Invalid credentials")
+        msg = "Invalid credentials"
+        raise InvalidCredentialsError(msg)
 
 
 class SalesforceAuthOAuth(SalesforceAuth):
+    """Login with an OAuth refresh token."""
+
     @property
     def _login_body(self):
         return {"grant_type": "refresh_token", **self._credentials._asdict()}
@@ -79,13 +117,20 @@ class SalesforceAuthOAuth(SalesforceAuth):
         return f"https://{self.domain}.salesforce.com/services/oauth2/token"
 
     def login(self):
+        """Attempt to login and return Session info."""
+        # `requests.post` can raise before it binds a response, and a response
+        # that carries an error status is falsy. Test against None so that the
+        # body reaches the caller for every failure that produced one.
+        resp = None
+
         try:
-            LOGGER.info(f"Attempting login via OAuth2")
+            LOGGER.info("Attempting login via OAuth2")
 
             resp = requests.post(
                 self._login_url,
                 data=self._login_body,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=LOGIN_TIMEOUT_SECONDS,
             )
 
             resp.raise_for_status()
@@ -95,22 +140,18 @@ class SalesforceAuthOAuth(SalesforceAuth):
             return Session(auth["access_token"], instance_url=auth["instance_url"])
         except Exception as e:
             error_message = str(e)
-            if resp:
-                error_message = error_message + ", Response from Salesforce: {}".format(
-                    resp.text
+            if resp is not None:
+                error_message = (
+                    error_message + f", Response from Salesforce: {resp.text}"
                 )
-            raise Exception(error_message) from e
-
-
-class SalesforceAuthPassword(SalesforceAuth):
-    def login(self):
-        session_id, instance = SalesforceLogin(
-            domain=self.domain, **self._credentials._asdict()
-        )
-        return Session(session_id, instance=instance)
+            raise SalesforceLoginError(error_message) from e
 
 
 class SalesforceAuthJWT(SalesforceAuth):
+    """Login with a signed JWT bearer assertion."""
+
+    # Salesforce rejects an assertion whose `exp` claim sits more than five
+    # minutes ahead, so a longer lifetime cannot be used.
     JWT_LIFETIME_SECONDS = 300
 
     @property
@@ -128,14 +169,16 @@ class SalesforceAuthJWT(SalesforceAuth):
             "aud": self._audience,
             "exp": int(time.time()) + self.JWT_LIFETIME_SECONDS,
         }
-        return jwt.encode(
-            claims, self._credentials.jwt_private_key, algorithm="RS256"
-        )
+        return jwt.encode(claims, self._credentials.jwt_private_key, algorithm="RS256")
 
     def login(self) -> Session:
+        """Attempt to login and return Session info."""
+        # See the note in SalesforceAuthOAuth.login about testing against None.
         resp = None
+
         try:
             LOGGER.info("Attempting login via OAuth2 JWT Bearer")
+
             resp = requests.post(
                 self._login_url,
                 data={
@@ -143,13 +186,29 @@ class SalesforceAuthJWT(SalesforceAuth):
                     "assertion": self._build_assertion(),
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=LOGIN_TIMEOUT_SECONDS,
             )
+
             resp.raise_for_status()
             auth = resp.json()
+
             LOGGER.info("OAuth2 JWT Bearer login successful")
             return Session(auth["access_token"], instance_url=auth["instance_url"])
         except Exception as e:
             error_message = str(e)
             if resp is not None:
-                error_message = f"{error_message}, Response from Salesforce: {resp.text}"
-            raise Exception(error_message) from e
+                error_message = (
+                    error_message + f", Response from Salesforce: {resp.text}"
+                )
+            raise SalesforceLoginError(error_message) from e
+
+
+class SalesforceAuthPassword(SalesforceAuth):
+    """Login with a username, a password, and a security token."""
+
+    def login(self):
+        """Attempt to login and return Session info."""
+        session_id, instance = SalesforceLogin(
+            domain=self.domain, **self._credentials._asdict()
+        )
+        return Session(session_id, instance=instance)

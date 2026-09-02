@@ -1,8 +1,8 @@
 """Salesforce target class."""
 
-from singer_sdk.target_base import Target
 from singer_sdk import typing as th
 from singer_sdk.exceptions import ConfigValidationError
+from singer_sdk.target_base import Target
 
 from target_salesforce.sinks import (
     SalesforceSink,
@@ -46,53 +46,82 @@ class TargetSalesforce(Target):
             "security_token",
             th.StringType,
             secret=True,
-            description="User/password generated security token. Reset under your Account Settings",
+            description=(
+                "User/password generated security token. Reset under your "
+                "Account Settings"
+            ),
         ),
         th.Property(
             "jwt_client_id",
             th.StringType,
             secret=True,
-            description="JWT bearer: Salesforce Connected/External Client App consumer key (iss claim).",
+            description=(
+                "JWT bearer: Salesforce Connected/External Client App consumer "
+                "key (iss claim)."
+            ),
         ),
         th.Property(
             "jwt_username",
             th.StringType,
-            description="JWT bearer: Salesforce username to impersonate (sub claim).",
+            description=("JWT bearer: Salesforce username to impersonate (sub claim)."),
         ),
         th.Property(
             "jwt_private_key",
             th.StringType,
             secret=True,
-            description="JWT bearer: RSA private key PEM matching the cert uploaded to the Connected/External Client App.",
+            description=(
+                "JWT bearer: RSA private key PEM matching the cert uploaded to "
+                "the Connected/External Client App."
+            ),
         ),
         th.Property(
             "domain",
             th.StringType,
             default="login",
-            description="Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain."
+            description=(
+                "Your Salesforce instance domain. Use 'login' (default) or "
+                "'test' (sandbox), or Salesforce My domain."
+            ),
         ),
         th.Property(
             "is_sandbox",
             th.BooleanType,
-            description="DEPRECATED: Use domain. is_sandbox-False = 'login', is_sandbox-True = 'test'",
+            description=(
+                "DEPRECATED: Use domain. is_sandbox-False = 'login', "
+                "is_sandbox-True = 'test'"
+            ),
         ),
         th.Property(
             "action",
             th.StringType,
             default="update",
             allowed_values=SalesforceSink.valid_actions,
-            description="How to handle incomming records by default (insert/update/upsert/delete/hard_delete)",
+            description=(
+                "How to handle incoming records by default "
+                "(insert/update/upsert/delete/hard_delete)"
+            ),
         ),
         th.Property(
             "allow_failures",
             th.BooleanType,
             default=False,
-            description="Allows the target to continue persisting if a record fails to commit",
+            description=(
+                "Allows the target to continue persisting if a record fails to commit"
+            ),
         ),
     ).to_dict()
     default_sink_class = SalesforceSink
 
-    def __init__(self, *, config= None, parse_env_config: bool = False, validate_config: bool = True) -> None:
-        super().__init__(config=config, parse_env_config=parse_env_config, validate_config=validate_config)
+    def __init__(self, **kwargs) -> None:
+        """Initialize the target and reject the deprecated is_sandbox setting."""
+        # Forward every argument so the target keeps accepting whatever the SDK
+        # base class accepts. The SDK adds keyword arguments between releases,
+        # and repeating the signature here makes each addition a break.
+        super().__init__(**kwargs)
+
         if self.config.get("is_sandbox") is not None:
-            raise ConfigValidationError("is_sandbox has been deprecated, use domain. is_sandbox-False = 'login', is_sandbox-True = 'test'")
+            msg = (
+                "is_sandbox has been deprecated, use domain. "
+                "is_sandbox-False = 'login', is_sandbox-True = 'test'"
+            )
+            raise ConfigValidationError(msg)

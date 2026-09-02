@@ -34,7 +34,7 @@ When more than one set is provided, the target picks in this order: JWT → OAut
 | password            | False     | None    | User/password password |
 | security_token      | False     | None    | User/password generated security token. Reset under your Account Settings |
 | domain              | False     | login   | Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain. |
-| action              | False     | update  | How to handle incomming records by default (insert/update/upsert/delete/hard_delete) |
+| action              | False     | update  | How to handle incoming records by default (insert/update/upsert/delete/hard_delete) |
 | allow_failures      | False     | False   | Allows the target to continue persisting if a record fails to commit |
 
 A full list of supported settings and capabilities for this
@@ -79,8 +79,14 @@ You can inspect the result of bulk API load jobs via the following URL:
 ### Initialize your Development Environment
 
 ```bash
-pipx install poetry
-poetry install
+pipx install uv
+uv sync
+```
+
+Install the pre-commit hooks so that the checks run on every commit:
+
+```bash
+uv run pre-commit install
 ```
 
 ### Executing the Target Directly
@@ -98,13 +104,13 @@ Create tests within the `target_salesforce/tests` subfolder and
   then run:
 
 ```bash
-poetry run pytest
+uv run pytest
 ```
 
-You can also test the `target-salesforce` CLI interface directly using `poetry run`:
+You can also test the `target-salesforce` CLI interface directly using `uv run`:
 
 ```bash
-poetry run target-salesforce --help
+uv run target-salesforce --help
 ```
 
 ### Testing with [Meltano](https://meltano.com/)
