@@ -1,31 +1,33 @@
 """Tests standard target features using the built-in SDK tests library."""
 
-import os
-
-import pytest
 from singer_sdk.testing import get_target_test_class
+from singer_sdk.testing.suites import SingerTestSuite, target_tests
 
 from target_salesforce.target import TargetSalesforce
 
-REQUIRED_SETTINGS = ("username", "password", "security_token")
+# Most of the standard suite writes streams named `test_array_data`,
+# `TestCamelcase`, and so on. This target requires every stream to name an
+# existing Salesforce object, and the sink constructor calls describe() on it,
+# so those tests cannot pass against any org. Keep the tests that reject their
+# input, or never open a session, because those exercise the target itself.
+STREAMLESS_TESTS = frozenset(
+    {
+        "cli_prints",
+        "invalid_schema",
+        "record_before_schema",
+    },
+)
 
-SAMPLE_CONFIG = {
-    "username": os.environ.get("TARGET_SALESFORCE_USERNAME"),
-    "password": os.environ.get("TARGET_SALESFORCE_PASSWORD"),
-    "security_token": os.environ.get("TARGET_SALESFORCE_SECURITY_TOKEN"),
-    "domain": os.environ.get("TARGET_SALESFORCE_DOMAIN", "test"),
-}
-
-# The standard suite writes records to a Salesforce object over the API, so it
-# needs credentials for a sandbox org. Skip the suite when they are absent.
-pytestmark = pytest.mark.skipif(
-    not all(SAMPLE_CONFIG[setting] for setting in REQUIRED_SETTINGS),
-    reason="No Salesforce credentials in the environment",
+streamless_suite = SingerTestSuite(
+    kind="target",
+    tests=[test for test in target_tests.tests if test.name in STREAMLESS_TESTS],
 )
 
 
-# Run standard built-in target tests from the SDK:
+# Run the built-in target tests that do not need a Salesforce object:
 TestTargetSalesforce = get_target_test_class(
     target_class=TargetSalesforce,
-    config=SAMPLE_CONFIG,
+    config={},
+    custom_suites=[streamless_suite],
+    include_target_tests=False,
 )
