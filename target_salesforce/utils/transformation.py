@@ -25,26 +25,15 @@ def transform_record(
 
         if value is None or sf_field is None:
             transformed_record[field] = value
-            continue
-
-        transformed_record[field] = _format_value(value, sf_field.type)
+        # A datetime is also a date, so read the Salesforce type rather than
+        # the Python one. strftime keeps a date field to its date even so.
+        elif sf_field.type == "date" and isinstance(value, datetime.date):
+            transformed_record[field] = value.strftime(DATE_FORMAT)
+        elif (sf_field.type == "datetime" and isinstance(value, datetime.datetime)) or (
+            sf_field.type == "time" and isinstance(value, datetime.time)
+        ):
+            transformed_record[field] = value.isoformat(timespec="milliseconds")
+        else:
+            transformed_record[field] = value
 
     return transformed_record
-
-
-def _format_value(value, sf_type: str):
-    """Return one value as Salesforce spells its type, or unchanged."""
-    # A datetime is also a date, so read the Salesforce type rather than the
-    # Python one. strftime keeps a date field to its date even so.
-    if sf_type == "date" and isinstance(value, datetime.date):
-        return value.strftime(DATE_FORMAT)
-
-    # Salesforce specifies three fractional digits. `isoformat` gives six by
-    # default, and none at all when the microsecond is zero.
-    if sf_type == "datetime" and isinstance(value, datetime.datetime):
-        return value.isoformat(timespec="milliseconds")
-
-    if sf_type == "time" and isinstance(value, datetime.time):
-        return value.isoformat(timespec="milliseconds")
-
-    return value
