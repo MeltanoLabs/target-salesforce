@@ -20,14 +20,12 @@ def transform_record(
 
     for field, value in record.items():
         sf_field = object_fields.get(field)
+        object_type = sf_field.type if sf_field else None
 
-        if value is None or sf_field is None:
-            transformed_record[field] = value
         # The SDK gives a date for a `date` schema and a datetime for a
         # `date-time` one, so the value already carries the precision that the
-        # field needs. A value that is not date-like belongs to a stream whose
-        # schema declared no format, and Salesforce parses it as it stands.
-        elif sf_field.type in {"date", "datetime"} and isinstance(value, datetime.date):
+        # field needs.
+        if object_type in {"date", "datetime"} and isinstance(value, datetime.date):
             transformed_record[field] = value.isoformat()
         else:
             transformed_record[field] = value
