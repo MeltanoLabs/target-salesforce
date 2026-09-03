@@ -1,4 +1,4 @@
-"""Tests for the conversion of date and time values into strings."""
+"""Tests for the conversion of date and datetime values into strings."""
 
 import datetime
 
@@ -12,7 +12,6 @@ UTC = datetime.timezone.utc
 OBJECT_FIELDS = {
     "Birthdate": ObjectField("date", createable=True, updateable=True),
     "LastModifiedDate": ObjectField("datetime", createable=True, updateable=True),
-    "OpenTime": ObjectField("time", createable=True, updateable=True),
     "Name": ObjectField("string", createable=True, updateable=True),
 }
 
@@ -55,11 +54,6 @@ def test_a_whole_second_still_carries_its_milliseconds():
     assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05.000+00:00"
 
 
-def test_a_time_becomes_a_time_string():
-    """A time field takes the time alone, to the same precision."""
-    assert _transform("OpenTime", datetime.time(3, 4, 5, 678901)) == "03:04:05.678"
-
-
 def test_a_datetime_in_a_date_field_keeps_only_its_date():
     """A datetime is also a date, so the Salesforce type decides the format."""
     value = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -79,7 +73,7 @@ def test_none_passes_through():
 
 
 def test_a_field_absent_from_the_object_passes_through():
-    """Schema validation rejects an unknown field, so do not guess here."""
+    """Salesforce owns the schema, so do not guess at a field it did not describe."""
     assert transform_record({"Nope": "x"}, OBJECT_FIELDS) == {"Nope": "x"}
 
 

@@ -1,4 +1,4 @@
-"""Conversion of Python date and time values back into strings for Salesforce."""
+"""Conversion of Python date and datetime values back into strings for Salesforce."""
 
 import datetime
 
@@ -11,7 +11,7 @@ def transform_record(
     record: dict,
     object_fields: dict[str, ObjectField],
 ) -> dict:
-    """Return the record with each date, datetime, and time value as a string.
+    """Return the record with each date and datetime value as a string.
 
     The SDK parses a date-like field into a Python object before the sink sees
     it. Salesforce is reached over a CSV upload, which renders whatever it is
@@ -29,9 +29,7 @@ def transform_record(
         # the Python one. strftime keeps a date field to its date even so.
         elif sf_field.type == "date" and isinstance(value, datetime.date):
             transformed_record[field] = value.strftime(DATE_FORMAT)
-        elif (sf_field.type == "datetime" and isinstance(value, datetime.datetime)) or (
-            sf_field.type == "time" and isinstance(value, datetime.time)
-        ):
+        elif sf_field.type == "datetime" and isinstance(value, datetime.datetime):
             transformed_record[field] = value.isoformat(timespec="milliseconds")
         else:
             transformed_record[field] = value
