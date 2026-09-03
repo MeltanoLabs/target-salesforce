@@ -60,7 +60,8 @@ class SalesforceSink(BatchSink):
 
         stream_object = getattr(self.sf_client, self.stream_name)
         for field in stream_object.describe().get("fields"):
-            object_fields[field.get("name")] = ObjectField(
+            object_fields[field.get("name").lower()] = ObjectField(
+                field.get("name"),
                 field.get("type"),
                 field.get("createable"),
                 field.get("updateable"),

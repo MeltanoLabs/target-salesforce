@@ -6,6 +6,10 @@ The checks are:
 2. If the config action is update, that the field can be updated.
 3. If the config action is insert, that the field can be created.
 4. If the config action is upsert, that the field can be created and updated.
+
+`object_fields` is keyed by the field name folded to lower case. Salesforce
+matches a field name case-insensitively, and it will not accept two fields on
+one object whose names differ by case alone, so a folded key is unambiguous.
 """
 
 from typing import NamedTuple
@@ -16,6 +20,9 @@ from target_salesforce.utils.exceptions import InvalidStreamSchemaError
 class ObjectField(NamedTuple):
     """A field of a Salesforce object, as the describe call reports it."""
 
+    # The name as Salesforce spells it. The key that finds this field is
+    # folded, so the canonical spelling has nowhere else to live.
+    name: str
     type: str
     createable: bool
     updateable: bool
@@ -28,12 +35,12 @@ def validate_schema_field(
     stream_name: str,
 ):
     """Validate one incoming schema field against the Salesforce object."""
-    sf_field: ObjectField | None = object_fields.get(field_name)
+    sf_field: ObjectField | None = object_fields.get(field_name.lower())
 
     if field_name.startswith("_sdc_"):
         return
 
-    if field_name == "Id":
+    if field_name.lower() == "id":
         if action == "insert":
             msg = "Id is not createable and should not be included on insert"
             raise InvalidStreamSchemaError(msg)
