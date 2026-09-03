@@ -59,9 +59,11 @@ Failure to ensure the following may result in incosistent results.
 5. Upsert records must contain `Id` and all fields must be createable and updateable.
 6. Delete/hard_delete records should only contain `Id`
 
-Salesforce checks each of these, and the target does not check them again. A batch that names a field the object does not hold, or that the configured action cannot write, fails with the reason that Salesforce gives, and the target logs the failed records. The failure therefore arrives when the Bulk job completes rather than when the stream's schema is read.
+Salesforce checks each of these, and the target does not check them again. The failure therefore arrives from the Bulk job rather than when the stream's schema is read, and it arrives in one of two forms.
 
-Note that `allow_failures` treats such a batch like any other failure. With `allow_failures` set to `true`, a schema that no record can satisfy leaves the run reporting success while writing nothing.
+Salesforce refuses a malformed batch outright. A field that the object does not hold gives `InvalidBatch : Field name not found`, and a `delete` batch carrying more than `Id` is refused at job creation. No record is processed, and the target raises whatever `allow_failures` is set to.
+
+Salesforce accepts the batch and rejects individual records for every other reason, such as a validation rule or a bad `Id`. The target logs the failed-records CSV and then obeys `allow_failures`, which is unchanged.
 
 ### General Workflow
 Here's a possible workflow on how to best use this tap in an Operational Analytics use case.
