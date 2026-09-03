@@ -73,12 +73,12 @@ def test_a_date_like_string_passes_through():
 
 
 def test_none_passes_through():
-    """A null stays null, so Salesforce clears the field."""
+    """A null passes through, because there is nothing to format."""
     assert _transform("LastModifiedDate", None) is None
 
 
 def test_a_field_absent_from_the_object_passes_through():
-    """Salesforce owns the schema, so do not guess at a field it did not describe."""
+    """A field that the describe call does not name has no type to format by."""
     assert transform_record({"Nope": "x"}, OBJECT_FIELDS) == {"Nope": "x"}
 
 
