@@ -8,12 +8,9 @@ from singer_sdk.plugin_base import PluginBase
 from singer_sdk.sinks import BatchSink
 
 from target_salesforce.session_credentials import SalesforceAuth, parse_credentials
-from target_salesforce.utils.exceptions import (
-    InvalidStreamSchemaError,
-    SalesforceApiError,
-)
+from target_salesforce.utils.exceptions import SalesforceApiError
 from target_salesforce.utils.transformation import transform_record
-from target_salesforce.utils.validation import ObjectField, validate_schema_field
+from target_salesforce.utils.validation import ObjectField
 
 
 class SalesforceSink(BatchSink):
@@ -36,13 +33,12 @@ class SalesforceSink(BatchSink):
         schema: dict,
         key_properties: list[str] | None,
     ) -> None:
-        """Initialize the sink and check the schema against the Salesforce object."""
+        """Initialize the sink."""
         super().__init__(target, stream_name, schema, key_properties)
         self.target = target
         self._sf_client = None
         self._batched_records: list[dict]
         self._object_fields: dict[str, ObjectField] | None = None
-        self._validate_schema_against_object()
 
     @property
     def sf_client(self):
@@ -68,22 +64,6 @@ class SalesforceSink(BatchSink):
 
         self._object_fields = object_fields
         return self._object_fields
-
-    def _validate_schema_against_object(self):
-        try:
-            for field_name in self.schema.get("properties"):
-                validate_schema_field(
-                    field_name,
-                    self.object_fields,
-                    self.config.get("action"),
-                    self.stream_name,
-                )
-        except InvalidStreamSchemaError as e:
-            msg = (
-                f"The incoming schema is incompatible with your "
-                f"{self.stream_name} object"
-            )
-            raise InvalidStreamSchemaError(msg) from e
 
     def _new_session(self):
         session_creds = SalesforceAuth.from_credentials(
@@ -131,13 +111,15 @@ class SalesforceSink(BatchSink):
             if action == "upsert":
                 return sf_object_action(records=batched_data, external_id_field="Id")
             return sf_object_action(records=batched_data)
-        except exceptions.SalesforceMalformedRequest:
-            self.logger.exception(
-                "Data in %s %s batch does not conform to target SF %s Object",
-                action,
-                self.stream_name,
-                self.stream_name,
-            )
+        # A Bulk 2.0 ingest reports a rejected batch, a failed job and a job
+        # timeout as SalesforceOperationError, which is a separate hierarchy
+        # from the SalesforceError that a REST call raises. Neither carries
+        # the stream, so name it here before the exception leaves the sink.
+        except (
+            exceptions.SalesforceOperationError,
+            exceptions.SalesforceMalformedRequest,
+        ):
+            self.logger.exception("%s to %s failed", action, self.stream_name)
             raise
 
     def _validate_batch_result(

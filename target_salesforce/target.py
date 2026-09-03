@@ -40,7 +40,7 @@ class TargetSalesforce(Target):
             "password",
             th.StringType,
             secret=True,
-            description="User/password username",
+            description="User/password password",
         ),
         th.Property(
             "security_token",
