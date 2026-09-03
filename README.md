@@ -52,12 +52,16 @@ target-salesforce --about
 ## Usage
 
 Failure to ensure the following may result in incosistent results.
-1. Incoming records must conform to your salesforce objects. Field Names (Case Sensitive) are validated by the target, but data types are not.
+1. Incoming records must conform to your salesforce objects.
 2. Stream name should match the target Object (ex. Account).
 3. Insert records should not contain `Id` or any fields that are not createable.
 4. Update records must contain `Id` or any fields that are not updateable.
 5. Upsert records must contain `Id` and all fields must be createable and updateable.
 6. Delete/hard_delete records should only contain `Id`
+
+Salesforce checks each of these, and the target does not check them again. A batch that names a field the object does not hold, or that the configured action cannot write, fails with the reason that Salesforce gives, and the target logs the failed records. The failure therefore arrives when the Bulk job completes rather than when the stream's schema is read.
+
+Note that `allow_failures` treats such a batch like any other failure. With `allow_failures` set to `true`, a schema that no record can satisfy leaves the run reporting success while writing nothing.
 
 ### General Workflow
 Here's a possible workflow on how to best use this tap in an Operational Analytics use case.
