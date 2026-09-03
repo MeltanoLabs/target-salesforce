@@ -111,13 +111,15 @@ class SalesforceSink(BatchSink):
             if action == "upsert":
                 return sf_object_action(records=batched_data, external_id_field="Id")
             return sf_object_action(records=batched_data)
-        except exceptions.SalesforceMalformedRequest:
-            self.logger.exception(
-                "Data in %s %s batch does not conform to target SF %s Object",
-                action,
-                self.stream_name,
-                self.stream_name,
-            )
+        # A Bulk 2.0 ingest reports a rejected batch, a failed job and a job
+        # timeout as SalesforceOperationError, which is a separate hierarchy
+        # from the SalesforceError that a REST call raises. Neither carries
+        # the stream, so name it here before the exception leaves the sink.
+        except (
+            exceptions.SalesforceOperationError,
+            exceptions.SalesforceMalformedRequest,
+        ):
+            self.logger.exception("%s to %s failed", action, self.stream_name)
             raise
 
     def _validate_batch_result(
