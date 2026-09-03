@@ -21,15 +21,15 @@ def _transform(field, value):
 
 
 def test_a_date_becomes_a_date_string():
-    """A date field takes the date alone."""
+    """A Date field takes the date alone."""
     assert _transform("Birthdate", datetime.date(2026, 1, 2)) == "2026-01-02"
 
 
-def test_a_datetime_becomes_iso_8601_with_milliseconds():
-    """Salesforce specifies a T separator and three fractional digits."""
+def test_a_datetime_becomes_iso_8601():
+    """ISO 8601 requires a T, which `str` on a datetime does not give."""
     value = datetime.datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=UTC)
 
-    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05.678+00:00"
+    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05.678901+00:00"
 
 
 def test_a_datetime_keeps_its_offset():
@@ -44,27 +44,32 @@ def test_a_datetime_keeps_its_offset():
         tzinfo=datetime.timezone(datetime.timedelta(hours=-5)),
     )
 
-    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05.000-05:00"
+    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05-05:00"
 
 
-def test_a_whole_second_still_carries_its_milliseconds():
-    """`isoformat` drops the fraction at zero microseconds unless asked."""
+def test_a_whole_second_carries_no_fraction():
+    """Salesforce accepts a timestamp with no fractional part."""
     value = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
-    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05.000+00:00"
+    assert _transform("LastModifiedDate", value) == "2026-01-02T03:04:05+00:00"
 
 
-def test_a_datetime_in_a_date_field_keeps_only_its_date():
-    """A datetime is also a date, so the Salesforce type decides the format."""
+def test_a_datetime_in_a_date_field_keeps_its_time():
+    """Salesforce takes the literal date part of a timestamp for a Date field."""
     value = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
-    assert _transform("Birthdate", value) == "2026-01-02"
+    assert _transform("Birthdate", value) == "2026-01-02T03:04:05+00:00"
 
 
 @pytest.mark.parametrize("value", ["plain", 42, True, 1.5])
 def test_a_value_of_another_type_passes_through(value):
     """Only a date-like value needs formatting."""
     assert _transform("Name", value) == value
+
+
+def test_a_date_like_string_passes_through():
+    """A tap that declares no format leaves the value a string, and it loads."""
+    assert _transform("Birthdate", "2026-01-02") == "2026-01-02"
 
 
 def test_none_passes_through():

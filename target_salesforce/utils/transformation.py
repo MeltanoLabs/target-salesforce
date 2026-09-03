@@ -4,8 +4,6 @@ import datetime
 
 from target_salesforce.utils.validation import ObjectField
 
-DATE_FORMAT = "%Y-%m-%d"
-
 
 def transform_record(
     record: dict,
@@ -25,12 +23,12 @@ def transform_record(
 
         if value is None or sf_field is None:
             transformed_record[field] = value
-        # A datetime is also a date, so read the Salesforce type rather than
-        # the Python one. strftime keeps a date field to its date even so.
-        elif sf_field.type == "date" and isinstance(value, datetime.date):
-            transformed_record[field] = value.strftime(DATE_FORMAT)
-        elif sf_field.type == "datetime" and isinstance(value, datetime.datetime):
-            transformed_record[field] = value.isoformat(timespec="milliseconds")
+        # The SDK gives a date for a `date` schema and a datetime for a
+        # `date-time` one, so the value already carries the precision that the
+        # field needs. A value that is not date-like belongs to a stream whose
+        # schema declared no format, and Salesforce parses it as it stands.
+        elif sf_field.type in {"date", "datetime"} and isinstance(value, datetime.date):
+            transformed_record[field] = value.isoformat()
         else:
             transformed_record[field] = value
 
