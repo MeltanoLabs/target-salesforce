@@ -48,13 +48,28 @@ class SalesforceSink(BatchSink):
         return self._new_session()
 
     @property
+    def object_name(self) -> str:
+        """Return the Salesforce object name for this stream.
+
+        A database tap names a stream ``<schema>-<table>``. The informal Singer
+        convention keeps only the final hyphen-separated part, so ``public-Account``
+        resolves to the ``Account`` object. Set ``use_raw_stream_names`` to address
+        an object named after the whole stream instead.
+        """
+        return (
+            self.stream_name
+            if self.config["use_raw_stream_names"]
+            else self.stream_name.split("-")[-1]
+        )
+
+    @property
     def object_fields(self) -> dict[str, ObjectField]:
         """Return the fields of the Salesforce object, keyed by field name."""
         if self._object_fields:
             return self._object_fields
         object_fields = {}
 
-        stream_object = getattr(self.sf_client, self.stream_name)
+        stream_object = getattr(self.sf_client, self.object_name)
         for field in stream_object.describe().get("fields"):
             object_fields[field.get("name")] = ObjectField(
                 field.get("type"),
@@ -86,7 +101,7 @@ class SalesforceSink(BatchSink):
 
     def process_batch(self, context: dict) -> None:
         """Write out any prepped records and return once fully written."""
-        sf_object: bulk2.SFBulk2Type = getattr(self.sf_client.bulk2, self.stream_name)
+        sf_object: bulk2.SFBulk2Type = getattr(self.sf_client.bulk2, self.object_name)
 
         results = self._process_batch_by_action(
             sf_object, self.config.get("action"), self._batched_records

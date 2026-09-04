@@ -36,6 +36,7 @@ When more than one set is provided, the target picks in this order: JWT → OAut
 | domain              | False     | login   | Your Salesforce instance domain. Use 'login' (default) or 'test' (sandbox), or Salesforce My domain. |
 | action              | False     | update  | How to handle incoming records by default (insert/update/upsert/delete/hard_delete) |
 | allow_failures      | False     | False   | Allows the target to continue persisting if a record fails to commit |
+| use_raw_stream_names | False    | False   | Whether to use raw stream names as Salesforce object names instead of the informal Singer convention of the last hyphen-separated part of the stream name. |
 
 A full list of supported settings and capabilities for this
 target is available by running:

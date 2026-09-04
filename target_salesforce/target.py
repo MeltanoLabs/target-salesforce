@@ -109,6 +109,16 @@ class TargetSalesforce(Target):
                 "Allows the target to continue persisting if a record fails to commit"
             ),
         ),
+        th.Property(
+            "use_raw_stream_names",
+            th.BooleanType,
+            default=False,
+            description=(
+                "Whether to use raw stream names as Salesforce object names instead "
+                "of the informal Singer convention of the last hyphen-separated part "
+                "of the stream name."
+            ),
+        ),
     ).to_dict()
     default_sink_class = SalesforceSink
 
