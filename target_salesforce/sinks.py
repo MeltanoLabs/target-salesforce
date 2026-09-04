@@ -134,7 +134,7 @@ class SalesforceSink(BatchSink):
             exceptions.SalesforceOperationError,
             exceptions.SalesforceMalformedRequest,
         ):
-            self.logger.exception("%s to %s failed", action, self.stream_name)
+            self.logger.exception("%s to %s failed", action, self.object_name)
             raise
 
     def _validate_batch_result(
@@ -159,13 +159,13 @@ class SalesforceSink(BatchSink):
             action,
             successful,
             total_records,
-            self.stream_name,
+            self.object_name,
         )
 
         if total_failed > 0 and not self.config.get("allow_failures"):
             msg = (
                 f"{total_failed} error(s) in {action} batch commit to "
-                f"{self.stream_name}."
+                f"{self.object_name}."
             )
             raise SalesforceApiError(msg)
 
@@ -185,7 +185,7 @@ class SalesforceSink(BatchSink):
             self.logger.error(
                 "Failed records for %s %s (job %s):\n%s",
                 action,
-                self.stream_name,
+                self.object_name,
                 job_id,
                 failed_csv,
             )
