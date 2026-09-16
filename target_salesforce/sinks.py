@@ -119,13 +119,25 @@ class SalesforceSink(BatchSink):
 
         Bulk 2.0 ingest methods take ``records=`` as a keyword argument and
         return one summary dict per chunk, not per-record results.
+
+        The CSV writer quotes a value only when it holds a character of the
+        line terminator, so under ``LF`` a value that holds a lone carriage
+        return goes out unquoted and the reader then rejects the whole batch.
+        ``CRLF`` covers both characters.
         """
         sf_object_action = getattr(sf_object, action)
 
         try:
             if action == "upsert":
-                return sf_object_action(records=batched_data, external_id_field="Id")
-            return sf_object_action(records=batched_data)
+                return sf_object_action(
+                    records=batched_data,
+                    external_id_field="Id",
+                    line_ending=bulk2.LineEnding.CRLF,
+                )
+            return sf_object_action(
+                records=batched_data,
+                line_ending=bulk2.LineEnding.CRLF,
+            )
         # A Bulk 2.0 ingest reports a rejected batch, a failed job and a job
         # timeout as SalesforceOperationError, which is a separate hierarchy
         # from the SalesforceError that a REST call raises. Neither carries

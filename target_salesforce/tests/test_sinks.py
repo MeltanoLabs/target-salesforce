@@ -1,5 +1,11 @@
 """Tests for the Salesforce sink."""
 
+import csv
+from collections.abc import Callable
+
+import pytest
+from simple_salesforce import bulk2
+
 from target_salesforce.sinks import SalesforceSink
 from target_salesforce.target import TargetSalesforce
 
@@ -30,3 +36,62 @@ def test_object_name_keeps_raw_stream_name_when_configured():
     """use_raw_stream_names keeps the whole stream name as the object name."""
     sink = _make_sink("public-Account", {"use_raw_stream_names": True})
     assert sink.object_name == "public-Account"
+
+
+class _RecordingBulkType:
+    """Stand-in for a Bulk 2.0 object that records the ingest arguments."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def __getattr__(self, action: str) -> Callable:
+        def ingest(**kwargs):
+            self.calls.append((action, kwargs))
+            return []
+
+        return ingest
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["insert", "update", "delete", "hard_delete", "upsert"],
+)
+def test_every_action_requests_the_crlf_line_ending(action):
+    """Each ingest method asks for CRLF, not the LF that the library defaults to."""
+    sink = _make_sink("public-Account")
+    sf_object = _RecordingBulkType()
+
+    sink._process_batch_by_action(sf_object, action, [{"Id": "001"}])  # noqa: SLF001
+
+    ((called_action, kwargs),) = sf_object.calls
+    assert called_action == action
+    assert kwargs["line_ending"] is bulk2.LineEnding.CRLF
+
+
+def test_crlf_quotes_a_lone_carriage_return():
+    """A value that holds a lone carriage return survives the CSV round trip."""
+    records = [{"Id": "001", "BillingStreet": "Unit 1\rLondon"}]
+
+    data = bulk2._convert_dict_to_csv(records, line_ending=bulk2.LineEnding.CRLF)  # noqa: SLF001
+    chunks = list(
+        bulk2._split_csv(records=data, line_ending=bulk2.LineEnding.CRLF)  # noqa: SLF001
+    )
+
+    assert [count for count, _ in chunks] == [1]
+    assert '"Unit 1\rLondon"' in chunks[0][1]
+
+
+def test_the_library_default_rejects_a_lone_carriage_return():
+    """Pin the upstream defect that the CRLF line ending works around.
+
+    The CSV writer quotes a value only when it holds a character of the line
+    terminator, so under LF it emits a lone carriage return bare. The reader
+    treats that carriage return as the end of a record whatever the terminator
+    is, and so rejects the text that the writer just produced.
+    """
+    records = [{"Id": "001", "BillingStreet": "Unit 1\rLondon"}]
+
+    data = bulk2._convert_dict_to_csv(records)  # noqa: SLF001
+
+    with pytest.raises(csv.Error, match="new-line character seen in unquoted field"):
+        list(bulk2._split_csv(records=data))  # noqa: SLF001
