@@ -1,5 +1,6 @@
 """Salesforce target sink class, which handles writing streams."""
 
+import tempfile
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -185,19 +186,30 @@ class SalesforceSink(BatchSink):
         """Log the failed-records CSV that Bulk 2.0 keeps for one job.
 
         Bulk 2.0 reports a count per chunk rather than a result per record, so
-        the CSV is the only place that names which record failed and why. The
-        fetch is a second API call, and a failure to read it must not hide the
-        batch failure that prompted it.
+        the CSV is the only place that names which record failed and why. It
+        holds one line for each of up to ``max_size`` records, so it goes to a
+        file and the log names the path. The fetch is a second API call, and a
+        failure to read it must not hide the batch failure that prompted it.
         """
         try:
             failed_csv = sf_object.get_failed_records(job_id)
         except Exception:
             self.logger.exception("Could not fetch failed records for job %s", job_id)
-        else:
-            self.logger.error(
-                "Failed records for %s %s (job %s):\n%s",
-                action,
-                self.object_name,
-                job_id,
-                failed_csv,
-            )
+            return
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f"target-salesforce-{self.object_name}-{job_id}-",
+            suffix=".csv",
+            delete=False,
+        ) as f:
+            f.write(failed_csv)
+
+        self.logger.error(
+            "Failed records for %s %s (job %s): %s",
+            action,
+            self.object_name,
+            job_id,
+            f.name,
+        )
