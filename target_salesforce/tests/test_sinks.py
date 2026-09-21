@@ -1,6 +1,9 @@
 """Tests for the Salesforce sink."""
 
 import csv
+import logging
+import pathlib
+import tempfile
 from collections.abc import Callable
 
 import pytest
@@ -95,3 +98,28 @@ def test_the_library_default_rejects_a_lone_carriage_return():
 
     with pytest.raises(csv.Error, match="new-line character seen in unquoted field"):
         list(bulk2._split_csv(records=data))  # noqa: SLF001
+
+
+def test_the_failed_records_csv_goes_to_a_file_not_the_log(
+    caplog, monkeypatch, tmp_path
+):
+    """The log names a file that holds the CSV, and does not hold the CSV."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","001"\n'
+
+    class _FailedRecordsBulkType:
+        def get_failed_records(self, job_id: str) -> str:  # noqa: ARG002
+            return failed_csv
+
+    sink = _make_sink("public-Product2")
+
+    with caplog.at_level(logging.ERROR):
+        sink._log_failed_records(_FailedRecordsBulkType(), "750xx", "update")  # noqa: SLF001
+
+    (message,) = [record.getMessage() for record in caplog.records]
+    dump = pathlib.Path(message.rsplit(" ", 1)[1])
+    assert message.startswith("Failed records for update Product2 (job 750xx): ")
+    assert dump.parent == tmp_path
+    assert dump.name.startswith("target-salesforce-Product2-750xx-")
+    assert dump.read_text() == failed_csv
+    assert "REQUIRED_FIELD_MISSING" not in message
