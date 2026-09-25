@@ -133,8 +133,15 @@ def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
 
 @pytest.mark.usefixtures("tempdir")
 def test_failed_records_are_counted_by_status_code(caplog):
-    """The most common code comes first, and each code names at most five ids."""
-    rows = [f'"","UNABLE_TO_LOCK_ROW:locked: 001x","a3b{i}"' for i in range(7)]
+    """The most common code comes first, with the id and message of its first record.
+
+    The message loses its trailing fields part, and a long message is cut short.
+    """
+    lock = (
+        "UNABLE_TO_LOCK_ROW:unable to obtain exclusive access to this record "
+        "or 200 records: 001xx0000000001AAA:--"
+    )
+    rows = [f'"","{lock}","a3b{i}"' for i in range(7)]
     rows += ['"","INVALID_CROSS_REFERENCE_KEY:invalid cross reference id:--","a3bZ"']
     failed_csv = '"sf__Id","sf__Error","id"\n' + "\n".join(rows) + "\n"
 
@@ -142,8 +149,8 @@ def test_failed_records_are_counted_by_status_code(caplog):
 
     assert message.startswith(
         "Failed records for update Product2 (job 750xx): "
-        "7 UNABLE_TO_LOCK_ROW (a3b0, a3b1, a3b2, a3b3, a3b4); "
-        "1 INVALID_CROSS_REFERENCE_KEY (a3bZ)."
+        "7 UNABLE_TO_LOCK_ROW (e.g. a3b0: unable to obtain exclusive access to ...); "
+        "1 INVALID_CROSS_REFERENCE_KEY (e.g. a3bZ: invalid cross reference id)."
     )
 
 
@@ -162,18 +169,24 @@ def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
 
     dump = pathlib.Path(message.rsplit(". CSV: ", 1)[1])
     assert dump.parent == tempdir
-    assert dump.name.startswith("target-salesforce-Product2-750xx-")
+    assert dump.name.startswith("target-salesforce-")
     assert dump.read_bytes() == failed_csv.encode()
 
 
 @pytest.mark.usefixtures("tempdir")
 def test_a_failed_insert_is_counted_without_ids(caplog):
-    """An insert sends no id, so the line holds the count alone."""
-    failed_csv = '"sf__Id","sf__Error","Name"\n"","REQUIRED_FIELD_MISSING::Name",""\n'
+    """An insert sends no id, so the example holds the message alone."""
+    failed_csv = (
+        '"sf__Id","sf__Error","Name"\n'
+        '"","REQUIRED_FIELD_MISSING:Required fields are missing: [Name]:Name",""\n'
+    )
 
     message = _log_failed_records(caplog, failed_csv, action="insert")
 
-    assert "(job 750xx): 1 REQUIRED_FIELD_MISSING. CSV: " in message
+    assert (
+        "(job 750xx): 1 REQUIRED_FIELD_MISSING "
+        "(e.g. Required fields are missing: [Name]). CSV: "
+    ) in message
 
 
 def test_record_count_counts_only_the_records_that_salesforce_loads(

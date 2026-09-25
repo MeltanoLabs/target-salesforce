@@ -64,7 +64,7 @@ Salesforce checks each of these, and the target does not check them again. The f
 
 Salesforce refuses a malformed batch outright. A field that the object does not hold gives `InvalidBatch : Field name not found`, and a `delete` batch carrying more than `Id` is refused at job creation. No record is processed, and the target raises whatever `allow_failures` is set to.
 
-Salesforce accepts the batch and rejects individual records for every other reason, such as a validation rule or a bad `Id`. The target logs how many records failed for each Salesforce status code, with up to five record ids for each, and the path of a temporary file that holds the failed-records CSV. It then obeys `allow_failures`, which is unchanged.
+Salesforce accepts the batch and rejects individual records for every other reason, such as a validation rule or a bad `Id`. The target logs how many records failed for each Salesforce status code, with one example for each: a record id and the start of its message. It also logs the path of a temporary file that holds the failed-records CSV. It then obeys `allow_failures`, which is unchanged.
 
 ### General Workflow
 Here's a possible workflow on how to best use this tap in an Operational Analytics use case.
@@ -80,7 +80,7 @@ This target writes through Salesforce's **Bulk API 2.0** (`/services/data/vXX.0/
 Per-record results are not returned inline by Bulk 2.0; when a job has failures the target fetches the failed-records CSV (`sf__Id`, `sf__Error`, plus the original fields) via `simple_salesforce.bulk2.SFBulk2Type.get_failed_records()`. The CSV holds one line for each failed record, so the target logs a count for each status code instead, and writes the CSV to a temporary file:
 
 ```
-Failed records for update Budget__c (job 750xx0000000001AAA): 2200 UNABLE_TO_LOCK_ROW (a0Bxx0000000001AAA, ...); 584 INVALID_CROSS_REFERENCE_KEY (a0Bxx0000000201AAA, ...). CSV: /tmp/target-salesforce-Budget__c-750xx0000000001AAA-h3k9vq2a.csv
+Failed records for update Budget__c (job 750xx0000000001AAA): 2200 UNABLE_TO_LOCK_ROW (e.g. a0Bxx0000000001AAA: unable to obtain exclusive access to ...); 584 INVALID_CROSS_REFERENCE_KEY (e.g. a0Bxx0000000201AAA: invalid cross reference id). CSV: /tmp/target-salesforce-h3k9vq2a.csv
 ```
 
 The temporary file lasts as long as the temporary directory does, so a run in an ephemeral environment loses it. Salesforce keeps its own copy of the CSV for 7 days, and `sf data bulk results --job-id <job_id> --target-org <org>` downloads it. The Setup page under [Troubleshooting](#troubleshooting) lists the job, but it shows the results of Bulk API `1.x` jobs only.

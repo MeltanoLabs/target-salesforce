@@ -4,7 +4,8 @@ import csv
 import io
 import sys
 import tempfile
-from collections import Counter, defaultdict
+import textwrap
+from collections import Counter
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -45,7 +46,7 @@ class SalesforceSink(BatchSink):
     """Salesforce target sink class."""
 
     max_size = 5000
-    max_logged_ids = 5
+    max_logged_message_length = 40
     valid_actions: ClassVar[list[str]] = [
         "insert",
         "update",
@@ -221,8 +222,8 @@ class SalesforceSink(BatchSink):
 
         Bulk 2.0 reports a count per chunk rather than a result per record, so
         the CSV is the only place that names which record failed and why. It
-        holds one line for each of up to ``max_size`` records, so the log names
-        a few ids for each code, and the CSV goes to a temporary file for a
+        holds one line for each of up to ``max_size`` records, so the log gives
+        one example for each code, and the CSV goes to a temporary file for a
         local run to inspect. The fetch is a second API call, and a failure to
         read it must not hide the batch failure that prompted it.
         """
@@ -236,18 +237,29 @@ class SalesforceSink(BatchSink):
         # A failed insert has no id, and a stream may name the field in any case.
         id_field = next((f for f in rows[0] if f.lower() == "id"), None)
         counts: Counter[str] = Counter()
-        ids: defaultdict[str, list[str]] = defaultdict(list)
+        examples: dict[str, dict[str, str]] = {}
         for row in rows:
             code = row["sf__Error"].split(":", 1)[0]
             counts[code] += 1
-            if id_field and len(ids[code]) < self.max_logged_ids:
-                ids[code].append(row[id_field])
+            examples.setdefault(code, row)
+
+        summaries = []
+        for code, count in counts.most_common():
+            example = examples[code]
+            # sf__Error reads CODE:message:fields, with -- for no field.
+            message = example["sf__Error"].split(":", 1)[1].rpartition(":")[0]
+            message = textwrap.shorten(
+                message, self.max_logged_message_length, placeholder=" ..."
+            )
+            if id_field:
+                message = f"{example[id_field]}: {message}"
+            summaries.append(f"{count} {code} (e.g. {message})")
 
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
             newline="",
-            prefix=f"target-salesforce-{self.object_name}-{job_id}-",
+            prefix="target-salesforce-",
             suffix=".csv",
             delete=False,
         ) as f:
@@ -258,9 +270,6 @@ class SalesforceSink(BatchSink):
             action,
             self.object_name,
             job_id,
-            "; ".join(
-                f"{count} {code}" + (f" ({', '.join(ids[code])})" if ids[code] else "")
-                for code, count in counts.most_common()
-            ),
+            "; ".join(summaries),
             f.name,
         )
