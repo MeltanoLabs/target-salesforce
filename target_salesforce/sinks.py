@@ -4,7 +4,7 @@ import csv
 import io
 import sys
 import tempfile
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -45,7 +45,6 @@ class SalesforceSink(BatchSink):
     """Salesforce target sink class."""
 
     max_size = 5000
-    max_logged_ids = 5
     valid_actions: ClassVar[list[str]] = [
         "insert",
         "update",
@@ -221,8 +220,8 @@ class SalesforceSink(BatchSink):
 
         Bulk 2.0 reports a count per chunk rather than a result per record, so
         the CSV is the only place that names which record failed and why. It
-        holds one line for each of up to ``max_size`` records, so the log names
-        a few ids for each code, and the CSV goes to a temporary file for a
+        holds one line for each of up to ``max_size`` records, so the log gives
+        one example for each code, and the CSV goes to a temporary file for a
         local run to inspect. The fetch is a second API call, and a failure to
         read it must not hide the batch failure that prompted it.
         """
@@ -236,12 +235,11 @@ class SalesforceSink(BatchSink):
         # A failed insert has no id, and a stream may name the field in any case.
         id_field = next((f for f in rows[0] if f.lower() == "id"), None)
         counts: Counter[str] = Counter()
-        ids: defaultdict[str, list[str]] = defaultdict(list)
+        examples: dict[str, dict[str, str]] = {}
         for row in rows:
             code = row["sf__Error"].split(":", 1)[0]
             counts[code] += 1
-            if id_field and len(ids[code]) < self.max_logged_ids:
-                ids[code].append(row[id_field])
+            examples.setdefault(code, row)
 
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -254,13 +252,16 @@ class SalesforceSink(BatchSink):
             f.write(failed_csv)
 
         self.logger.error(
-            "Failed records for %s %s (job %s): %s. CSV: %s",
+            "Failed records for %s %s (job %s). CSV: %s",
             action,
             self.object_name,
             job_id,
-            "; ".join(
-                f"{count} {code}" + (f" ({', '.join(ids[code])})" if ids[code] else "")
-                for code, count in counts.most_common()
-            ),
             f.name,
         )
+        for code, count in counts.most_common():
+            example = examples[code]
+            # sf__Error reads CODE:message:fields, with -- for no field.
+            message = example["sf__Error"].split(":", 1)[1].removesuffix(":--")
+            if id_field:
+                message = f"{example[id_field]}: {message}"
+            self.logger.error("%s %s (e.g. %s)", count, code, message)
