@@ -231,12 +231,12 @@ class SalesforceSink(BatchSink):
             self.logger.exception("Could not fetch failed records for job %s", job_id)
             return
 
-        reader = csv.DictReader(io.StringIO(failed_csv))
+        rows = list(csv.DictReader(io.StringIO(failed_csv)))
         # A failed insert has no id, and a stream may name the field in any case.
-        id_field = next((f for f in reader.fieldnames if f.lower() == "id"), None)
+        id_field = next((f for f in rows[0] if f.lower() == "id"), None)
         counts: Counter[str] = Counter()
         ids: defaultdict[str, list[str]] = defaultdict(list)
-        for row in reader:
+        for row in rows:
             code = row["sf__Error"].split(":", 1)[0]
             counts[code] += 1
             if id_field and len(ids[code]) < self.max_logged_ids:
