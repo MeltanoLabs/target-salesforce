@@ -2,8 +2,9 @@
 
 import csv
 import logging
+import pathlib
+import tempfile
 from collections.abc import Callable
-from types import SimpleNamespace
 
 import pytest
 from simple_salesforce import bulk2
@@ -110,12 +111,16 @@ class _FailedRecordsBulkType:
         return self.failed_csv
 
 
+@pytest.fixture
+def tempdir(monkeypatch, tmp_path):
+    """Keep the temporary files of the sink inside the directory of the test."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    return tmp_path
+
+
 def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
     """Log the failures of job 750xx to Product2, and return the one error line."""
     sink = _make_sink("public-Product2")
-    sink._sf_client = SimpleNamespace(  # noqa: SLF001
-        bulk2_url="https://example.my.salesforce.com/services/data/v59.0/jobs/"
-    )
 
     with caplog.at_level(logging.ERROR):
         sink._log_failed_records(  # noqa: SLF001
@@ -126,6 +131,7 @@ def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
     return message
 
 
+@pytest.mark.usefixtures("tempdir")
 def test_failed_records_are_counted_by_status_code(caplog):
     """The most common code comes first, and each code names at most five ids."""
     rows = [f'"","UNABLE_TO_LOCK_ROW:locked: 001x","a3b{i}"' for i in range(7)]
@@ -141,18 +147,19 @@ def test_failed_records_are_counted_by_status_code(caplog):
     )
 
 
-def test_the_log_links_the_csv_that_salesforce_keeps(caplog):
-    """The error line ends with the REST URL of the job's failed results."""
+def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
+    """The error line ends with the path of a file that holds the CSV."""
     failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","a3b"\n'
 
     message = _log_failed_records(caplog, failed_csv)
 
-    assert message.endswith(
-        ". CSV: https://example.my.salesforce.com/services/data/v59.0"
-        "/jobs/ingest/750xx/failedResults/"
-    )
+    dump = pathlib.Path(message.rsplit(". CSV: ", 1)[1])
+    assert dump.parent == tempdir
+    assert dump.name.startswith("target-salesforce-Product2-750xx-")
+    assert dump.read_text() == failed_csv
 
 
+@pytest.mark.usefixtures("tempdir")
 def test_a_failed_insert_is_counted_without_ids(caplog):
     """An insert sends no id, so the line holds the count alone."""
     failed_csv = '"sf__Id","sf__Error","Name"\n"","REQUIRED_FIELD_MISSING::Name",""\n'

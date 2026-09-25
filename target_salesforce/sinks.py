@@ -3,6 +3,7 @@
 import csv
 import io
 import sys
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import asdict
 from typing import ClassVar
@@ -221,9 +222,9 @@ class SalesforceSink(BatchSink):
         Bulk 2.0 reports a count per chunk rather than a result per record, so
         the CSV is the only place that names which record failed and why. It
         holds one line for each of up to ``max_size`` records, so the log names
-        a few ids for each code and links the CSV, which Salesforce keeps for
-        seven days. The fetch is a second API call, and a failure to read it
-        must not hide the batch failure that prompted it.
+        a few ids for each code, and the CSV goes to a temporary file for a
+        local run to inspect. The fetch is a second API call, and a failure to
+        read it must not hide the batch failure that prompted it.
         """
         try:
             failed_csv = sf_object.get_failed_records(job_id)
@@ -242,6 +243,15 @@ class SalesforceSink(BatchSink):
             if id_field and len(ids[code]) < self.max_logged_ids:
                 ids[code].append(row[id_field])
 
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f"target-salesforce-{self.object_name}-{job_id}-",
+            suffix=".csv",
+            delete=False,
+        ) as f:
+            f.write(failed_csv)
+
         self.logger.error(
             "Failed records for %s %s (job %s): %s. CSV: %s",
             action,
@@ -251,5 +261,5 @@ class SalesforceSink(BatchSink):
                 f"{count} {code}" + (f" ({', '.join(ids[code])})" if ids[code] else "")
                 for code, count in counts.most_common()
             ),
-            f"{self.sf_client.bulk2_url}ingest/{job_id}/failedResults/",
+            f.name,
         )
