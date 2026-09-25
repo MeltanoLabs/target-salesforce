@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from simple_salesforce import bulk2
+from singer_sdk import metrics
 
 from target_salesforce.sinks import SalesforceSink
 from target_salesforce.target import TargetSalesforce
@@ -159,3 +160,28 @@ def test_a_failed_insert_is_counted_without_ids(caplog):
     message = _log_failed_records(caplog, failed_csv, action="insert")
 
     assert "(job 750xx): 1 REQUIRED_FIELD_MISSING. CSV: " in message
+
+
+def test_record_count_counts_only_the_records_that_salesforce_loads(
+    caplog, monkeypatch
+):
+    """Each batch logs the loaded records, not the records that the target reads."""
+    sink = _make_sink("public-Account", {"allow_failures": True})
+    monkeypatch.setattr(sink, "_log_failed_records", lambda *_: None)
+    job = {
+        "job_id": "750xx",
+        "numberRecordsTotal": 5000,
+        "numberRecordsProcessed": 5000,
+        "numberRecordsFailed": 438,
+    }
+
+    with caplog.at_level(logging.INFO, logger=metrics.METRICS_LOGGER_NAME):
+        for _ in range(5000):
+            sink.record_counter_metric.increment()
+        sink._validate_batch_result(None, [job], "update")  # noqa: SLF001
+
+    (point,) = [
+        record.args[0] for record in caplog.records if record.msg == "METRIC: %s"
+    ]
+    assert point.metric == metrics.Metric.RECORD_COUNT
+    assert point.value == job["numberRecordsProcessed"] - job["numberRecordsFailed"]

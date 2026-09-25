@@ -2,11 +2,13 @@
 
 import csv
 import io
+import sys
 from collections import Counter, defaultdict
 from dataclasses import asdict
 from typing import ClassVar
 
 from simple_salesforce import Salesforce, bulk2, exceptions
+from singer_sdk import metrics
 from singer_sdk.plugin_base import PluginBase
 from singer_sdk.sinks import BatchSink
 
@@ -14,6 +16,28 @@ from target_salesforce.session_credentials import SalesforceAuth, parse_credenti
 from target_salesforce.utils.exceptions import SalesforceApiError
 from target_salesforce.utils.transformation import transform_record
 from target_salesforce.utils.validation import ObjectField
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
+
+
+class LoadedRecordCounter(metrics.Counter):
+    """Count the records that Salesforce loads.
+
+    The target calls increment for each record that it reads, before the
+    batch goes to Salesforce. That count includes the records that Salesforce
+    then rejects, so the call does nothing here.
+    """
+
+    def __init__(self, stream_name: str) -> None:
+        """Initialize the counter for one stream."""
+        super().__init__(metrics.Metric.RECORD_COUNT, {metrics.Tag.STREAM: stream_name})
+
+    @override
+    def increment(self, value=1):
+        pass
 
 
 class SalesforceSink(BatchSink):
@@ -43,6 +67,10 @@ class SalesforceSink(BatchSink):
         self._sf_client = None
         self._batched_records: list[dict]
         self._object_fields: dict[str, ObjectField] | None = None
+
+    @override
+    def get_sink_record_counter(self):
+        return LoadedRecordCounter(self.stream_name)
 
     @property
     def sf_client(self):
@@ -177,6 +205,8 @@ class SalesforceSink(BatchSink):
             total_records,
             self.object_name,
         )
+        with self.record_counter_metric as counter:
+            counter.value += successful
 
         if total_failed > 0 and not self.config.get("allow_failures"):
             msg = (
