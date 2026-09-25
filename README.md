@@ -80,7 +80,7 @@ This target writes through Salesforce's **Bulk API 2.0** (`/services/data/vXX.0/
 Per-record results are not returned inline by Bulk 2.0; when a job has failures the target fetches the failed-records CSV (`sf__Id`, `sf__Error`, plus the original fields) via `simple_salesforce.bulk2.SFBulk2Type.get_failed_records()`. The CSV holds one line for each failed record, so the target logs a count for each status code instead, and writes the CSV to a temporary file:
 
 ```
-Failed records for update Budget__c (job 750xx0000000001AAA). CSV: /tmp/target-salesforce-h3k9vq2a.csv
+Failed records for update Budget__c (job 750xx0000000001AAA). CSV: /tmp/target-salesforce-Budget__c-750xx0000000001AAA-h3k9vq2a.csv
 2200 UNABLE_TO_LOCK_ROW (e.g. a0Bxx0000000001AAA: unable to obtain exclusive access to this record or 200 records: 001xx0000000001AAA,001xx0000000002AAA, ... (198 more))
 584 INVALID_CROSS_REFERENCE_KEY (e.g. a0Bxx0000000201AAA: invalid cross reference id)
 ```

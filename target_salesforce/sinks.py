@@ -245,7 +245,7 @@ class SalesforceSink(BatchSink):
             mode="w",
             encoding="utf-8",
             newline="",
-            prefix="target-salesforce-",
+            prefix=f"target-salesforce-{self.object_name}-{job_id}-",
             suffix=".csv",
             delete=False,
         ) as f:

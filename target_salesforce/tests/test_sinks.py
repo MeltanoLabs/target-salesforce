@@ -172,7 +172,7 @@ def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
 
     dump = pathlib.Path(job.rsplit(". CSV: ", 1)[1])
     assert dump.parent == tempdir
-    assert dump.name.startswith("target-salesforce-")
+    assert dump.name.startswith("target-salesforce-Product2-750xx-")
     assert dump.read_bytes() == failed_csv.encode()
 
 
