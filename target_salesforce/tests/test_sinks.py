@@ -118,8 +118,8 @@ def tempdir(monkeypatch, tmp_path):
     return tmp_path
 
 
-def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
-    """Log the failures of job 750xx to Product2, and return the one error line."""
+def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> list[str]:
+    """Log the failures of job 750xx to Product2, and return the error lines."""
     sink = _make_sink("public-Product2")
 
     with caplog.at_level(logging.ERROR):
@@ -127,15 +127,15 @@ def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
             _FailedRecordsBulkType(failed_csv), "750xx", action
         )
 
-    (message,) = [record.getMessage() for record in caplog.records]
-    return message
+    return [record.getMessage() for record in caplog.records]
 
 
 @pytest.mark.usefixtures("tempdir")
 def test_failed_records_are_counted_by_status_code(caplog):
-    """The most common code comes first, with the id and message of its first record.
+    """One line names the job, then one line for each code, most common first.
 
-    The message keeps any field names, and drops the -- that stands for no field.
+    Each code line gives the id and message of its first record. The message keeps
+    any field names, and drops the -- that stands for no field.
     """
     lock = (
         "UNABLE_TO_LOCK_ROW:unable to obtain exclusive access to this record "
@@ -145,18 +145,20 @@ def test_failed_records_are_counted_by_status_code(caplog):
     rows += ['"","INVALID_CROSS_REFERENCE_KEY:invalid cross reference id:--","a3bZ"']
     failed_csv = '"sf__Id","sf__Error","id"\n' + "\n".join(rows) + "\n"
 
-    message = _log_failed_records(caplog, failed_csv)
+    job, *codes = _log_failed_records(caplog, failed_csv)
 
-    assert message.startswith(
-        "Failed records for update Product2 (job 750xx): "
-        "7 UNABLE_TO_LOCK_ROW (e.g. a3b0: unable to obtain exclusive access to this "
-        "record or 200 records: 001xx0000000001AAA); "
-        "1 INVALID_CROSS_REFERENCE_KEY (e.g. a3bZ: invalid cross reference id)."
-    )
+    assert job.startswith("Failed records for update Product2 (job 750xx). CSV: ")
+    assert codes == [
+        (
+            "7 UNABLE_TO_LOCK_ROW (e.g. a3b0: unable to obtain exclusive access to "
+            "this record or 200 records: 001xx0000000001AAA)"
+        ),
+        "1 INVALID_CROSS_REFERENCE_KEY (e.g. a3bZ: invalid cross reference id)",
+    ]
 
 
 def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
-    """The error line ends with the path of a file that holds the CSV unchanged.
+    """The job line ends with the path of a file that holds the CSV unchanged.
 
     Salesforce ends each line with CRLF, and a quoted value can hold a lone
     carriage return. The file must keep both exactly as they arrived.
@@ -166,9 +168,9 @@ def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
         '"","REQUIRED_FIELD_MISSING::Name","a3b","Unit 1\rLondon"\r\n'
     )
 
-    message = _log_failed_records(caplog, failed_csv)
+    job, *_ = _log_failed_records(caplog, failed_csv)
 
-    dump = pathlib.Path(message.rsplit(". CSV: ", 1)[1])
+    dump = pathlib.Path(job.rsplit(". CSV: ", 1)[1])
     assert dump.parent == tempdir
     assert dump.name.startswith("target-salesforce-")
     assert dump.read_bytes() == failed_csv.encode()
@@ -182,12 +184,11 @@ def test_a_failed_insert_is_counted_without_ids(caplog):
         '"","REQUIRED_FIELD_MISSING:Required fields are missing: [Name]:Name",""\n'
     )
 
-    message = _log_failed_records(caplog, failed_csv, action="insert")
+    _, *codes = _log_failed_records(caplog, failed_csv, action="insert")
 
-    assert (
-        "(job 750xx): 1 REQUIRED_FIELD_MISSING "
-        "(e.g. Required fields are missing: [Name]:Name). CSV: "
-    ) in message
+    assert codes == [
+        "1 REQUIRED_FIELD_MISSING (e.g. Required fields are missing: [Name]:Name)"
+    ]
 
 
 def test_record_count_counts_only_the_records_that_salesforce_loads(

@@ -241,15 +241,6 @@ class SalesforceSink(BatchSink):
             counts[code] += 1
             examples.setdefault(code, row)
 
-        summaries = []
-        for code, count in counts.most_common():
-            example = examples[code]
-            # sf__Error reads CODE:message:fields, with -- for no field.
-            message = example["sf__Error"].split(":", 1)[1].removesuffix(":--")
-            if id_field:
-                message = f"{example[id_field]}: {message}"
-            summaries.append(f"{count} {code} (e.g. {message})")
-
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -261,10 +252,16 @@ class SalesforceSink(BatchSink):
             f.write(failed_csv)
 
         self.logger.error(
-            "Failed records for %s %s (job %s): %s. CSV: %s",
+            "Failed records for %s %s (job %s). CSV: %s",
             action,
             self.object_name,
             job_id,
-            "; ".join(summaries),
             f.name,
         )
+        for code, count in counts.most_common():
+            example = examples[code]
+            # sf__Error reads CODE:message:fields, with -- for no field.
+            message = example["sf__Error"].split(":", 1)[1].removesuffix(":--")
+            if id_field:
+                message = f"{example[id_field]}: {message}"
+            self.logger.error("%s %s (e.g. %s)", count, code, message)
