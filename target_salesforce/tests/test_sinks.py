@@ -101,29 +101,79 @@ def test_the_library_default_rejects_a_lone_carriage_return():
         list(bulk2._split_csv(records=data))  # noqa: SLF001
 
 
-def test_the_failed_records_csv_goes_to_a_file_not_the_log(
-    caplog, monkeypatch, tmp_path
-):
-    """The log names a file that holds the CSV, and does not hold the CSV."""
+class _FailedRecordsBulkType:
+    """Stand-in for a Bulk 2.0 object that returns one failed-records CSV."""
+
+    def __init__(self, failed_csv: str) -> None:
+        self.failed_csv = failed_csv
+
+    def get_failed_records(self, job_id: str) -> str:  # noqa: ARG002
+        return self.failed_csv
+
+
+@pytest.fixture
+def tempdir(monkeypatch, tmp_path):
+    """Keep the temporary files of the sink inside the directory of the test."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","001"\n'
+    return tmp_path
 
-    class _FailedRecordsBulkType:
-        def get_failed_records(self, job_id: str) -> str:  # noqa: ARG002
-            return failed_csv
 
+def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
+    """Log the failures of job 750xx to Product2, and return the one error line."""
     sink = _make_sink("public-Product2")
 
     with caplog.at_level(logging.ERROR):
-        sink._log_failed_records(_FailedRecordsBulkType(), "750xx", "update")  # noqa: SLF001
+        sink._log_failed_records(  # noqa: SLF001
+            _FailedRecordsBulkType(failed_csv), "750xx", action
+        )
 
     (message,) = [record.getMessage() for record in caplog.records]
-    dump = pathlib.Path(message.rsplit(" ", 1)[1])
-    assert message.startswith("Failed records for update Product2 (job 750xx): ")
-    assert dump.parent == tmp_path
+    return message
+
+
+@pytest.mark.usefixtures("tempdir")
+def test_failed_records_are_counted_by_status_code(caplog):
+    """The most common code comes first, and each code names at most five ids."""
+    rows = [f'"","UNABLE_TO_LOCK_ROW:locked: 001x","a3b{i}"' for i in range(7)]
+    rows += ['"","INVALID_CROSS_REFERENCE_KEY:invalid cross reference id:--","a3bZ"']
+    failed_csv = '"sf__Id","sf__Error","id"\n' + "\n".join(rows) + "\n"
+
+    message = _log_failed_records(caplog, failed_csv)
+
+    assert message.startswith(
+        "Failed records for update Product2 (job 750xx): "
+        "7 UNABLE_TO_LOCK_ROW (a3b0, a3b1, a3b2, a3b3, a3b4); "
+        "1 INVALID_CROSS_REFERENCE_KEY (a3bZ)."
+    )
+
+
+def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
+    """The error line ends with the path of a file that holds the CSV unchanged.
+
+    Salesforce ends each line with CRLF, and a quoted value can hold a lone
+    carriage return. The file must keep both exactly as they arrived.
+    """
+    failed_csv = (
+        '"sf__Id","sf__Error","Id","Street"\r\n'
+        '"","REQUIRED_FIELD_MISSING::Name","a3b","Unit 1\rLondon"\r\n'
+    )
+
+    message = _log_failed_records(caplog, failed_csv)
+
+    dump = pathlib.Path(message.rsplit(". CSV: ", 1)[1])
+    assert dump.parent == tempdir
     assert dump.name.startswith("target-salesforce-Product2-750xx-")
-    assert dump.read_text() == failed_csv
-    assert "REQUIRED_FIELD_MISSING" not in message
+    assert dump.read_bytes() == failed_csv.encode()
+
+
+@pytest.mark.usefixtures("tempdir")
+def test_a_failed_insert_is_counted_without_ids(caplog):
+    """An insert sends no id, so the line holds the count alone."""
+    failed_csv = '"sf__Id","sf__Error","Name"\n"","REQUIRED_FIELD_MISSING::Name",""\n'
+
+    message = _log_failed_records(caplog, failed_csv, action="insert")
+
+    assert "(job 750xx): 1 REQUIRED_FIELD_MISSING. CSV: " in message
 
 
 def test_record_count_counts_only_the_records_that_salesforce_loads(

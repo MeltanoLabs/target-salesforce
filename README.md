@@ -64,7 +64,7 @@ Salesforce checks each of these, and the target does not check them again. The f
 
 Salesforce refuses a malformed batch outright. A field that the object does not hold gives `InvalidBatch : Field name not found`, and a `delete` batch carrying more than `Id` is refused at job creation. No record is processed, and the target raises whatever `allow_failures` is set to.
 
-Salesforce accepts the batch and rejects individual records for every other reason, such as a validation rule or a bad `Id`. The target writes the failed-records CSV to a temporary file, logs the path, and then obeys `allow_failures`, which is unchanged.
+Salesforce accepts the batch and rejects individual records for every other reason, such as a validation rule or a bad `Id`. The target logs how many records failed for each Salesforce status code, with up to five record ids for each, and the path of a temporary file that holds the failed-records CSV. It then obeys `allow_failures`, which is unchanged.
 
 ### General Workflow
 Here's a possible workflow on how to best use this tap in an Operational Analytics use case.
@@ -77,7 +77,13 @@ Here's a possible workflow on how to best use this tap in an Operational Analyti
 
 This target writes through Salesforce's **Bulk API 2.0** (`/services/data/vXX.0/jobs/ingest`). The earlier `1.x` versions of this target used Bulk API 1.0 via `simple_salesforce.bulk`, which authenticates with an `X-SFDC-Session` SOAP-style session id. That made it incompatible with OAuth2 JWT Bearer auth (JWT-issued access tokens are not valid SOAP session ids and every job fails with `InvalidSessionId`). Bulk 2.0 uses standard `Authorization: Bearer`, so it works with all three credential types (JWT, OAuth refresh-token, username/password).
 
-Per-record results are not returned inline by Bulk 2.0; when a job has failures the target fetches the failed-records CSV (`sf__Id`, `sf__Error`, plus the original fields) via `simple_salesforce.bulk2.SFBulk2Type.get_failed_records()`. The CSV holds one line for each failed record, so the target writes it to a temporary file and logs the path rather than the content.
+Per-record results are not returned inline by Bulk 2.0; when a job has failures the target fetches the failed-records CSV (`sf__Id`, `sf__Error`, plus the original fields) via `simple_salesforce.bulk2.SFBulk2Type.get_failed_records()`. The CSV holds one line for each failed record, so the target logs a count for each status code instead, and writes the CSV to a temporary file:
+
+```
+Failed records for update Budget__c (job 750xx0000000001AAA): 2200 UNABLE_TO_LOCK_ROW (a0Bxx0000000001AAA, ...); 584 INVALID_CROSS_REFERENCE_KEY (a0Bxx0000000201AAA, ...). CSV: /tmp/target-salesforce-Budget__c-750xx0000000001AAA-h3k9vq2a.csv
+```
+
+The temporary file lasts as long as the temporary directory does, so a run in an ephemeral environment loses it. Salesforce keeps its own copy of the CSV for 7 days, and `sf data bulk results --job-id <job_id> --target-org <org>` downloads it. The Setup page under [Troubleshooting](#troubleshooting) lists the job, but it shows the results of Bulk API `1.x` jobs only.
 
 ### Troubleshooting
 You can inspect the result of bulk API load jobs via the following URL:

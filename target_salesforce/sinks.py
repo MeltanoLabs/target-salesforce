@@ -1,7 +1,10 @@
 """Salesforce target sink class, which handles writing streams."""
 
+import csv
+import io
 import sys
 import tempfile
+from collections import Counter, defaultdict
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -42,6 +45,7 @@ class SalesforceSink(BatchSink):
     """Salesforce target sink class."""
 
     max_size = 5000
+    max_logged_ids = 5
     valid_actions: ClassVar[list[str]] = [
         "insert",
         "update",
@@ -213,13 +217,14 @@ class SalesforceSink(BatchSink):
             raise SalesforceApiError(msg)
 
     def _log_failed_records(self, sf_object: bulk2.SFBulk2Type, job_id, action) -> None:
-        """Log the failed-records CSV that Bulk 2.0 keeps for one job.
+        """Log how many records of one job failed for each Salesforce status code.
 
         Bulk 2.0 reports a count per chunk rather than a result per record, so
         the CSV is the only place that names which record failed and why. It
-        holds one line for each of up to ``max_size`` records, so it goes to a
-        file and the log names the path. The fetch is a second API call, and a
-        failure to read it must not hide the batch failure that prompted it.
+        holds one line for each of up to ``max_size`` records, so the log names
+        a few ids for each code, and the CSV goes to a temporary file for a
+        local run to inspect. The fetch is a second API call, and a failure to
+        read it must not hide the batch failure that prompted it.
         """
         try:
             failed_csv = sf_object.get_failed_records(job_id)
@@ -227,9 +232,21 @@ class SalesforceSink(BatchSink):
             self.logger.exception("Could not fetch failed records for job %s", job_id)
             return
 
+        rows = list(csv.DictReader(io.StringIO(failed_csv)))
+        # A failed insert has no id, and a stream may name the field in any case.
+        id_field = next((f for f in rows[0] if f.lower() == "id"), None)
+        counts: Counter[str] = Counter()
+        ids: defaultdict[str, list[str]] = defaultdict(list)
+        for row in rows:
+            code = row["sf__Error"].split(":", 1)[0]
+            counts[code] += 1
+            if id_field and len(ids[code]) < self.max_logged_ids:
+                ids[code].append(row[id_field])
+
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
+            newline="",
             prefix=f"target-salesforce-{self.object_name}-{job_id}-",
             suffix=".csv",
             delete=False,
@@ -237,9 +254,13 @@ class SalesforceSink(BatchSink):
             f.write(failed_csv)
 
         self.logger.error(
-            "Failed records for %s %s (job %s): %s",
+            "Failed records for %s %s (job %s): %s. CSV: %s",
             action,
             self.object_name,
             job_id,
+            "; ".join(
+                f"{count} {code}" + (f" ({', '.join(ids[code])})" if ids[code] else "")
+                for code, count in counts.most_common()
+            ),
             f.name,
         )
