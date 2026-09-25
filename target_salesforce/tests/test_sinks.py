@@ -135,7 +135,7 @@ def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
 def test_failed_records_are_counted_by_status_code(caplog):
     """The most common code comes first, with the id and message of its first record.
 
-    The message loses its trailing fields part, and a long message is cut short.
+    The message keeps any field names, and drops the -- that stands for no field.
     """
     lock = (
         "UNABLE_TO_LOCK_ROW:unable to obtain exclusive access to this record "
@@ -149,7 +149,8 @@ def test_failed_records_are_counted_by_status_code(caplog):
 
     assert message.startswith(
         "Failed records for update Product2 (job 750xx): "
-        "7 UNABLE_TO_LOCK_ROW (e.g. a3b0: unable to obtain exclusive access to ...); "
+        "7 UNABLE_TO_LOCK_ROW (e.g. a3b0: unable to obtain exclusive access to this "
+        "record or 200 records: 001xx0000000001AAA); "
         "1 INVALID_CROSS_REFERENCE_KEY (e.g. a3bZ: invalid cross reference id)."
     )
 
@@ -185,7 +186,7 @@ def test_a_failed_insert_is_counted_without_ids(caplog):
 
     assert (
         "(job 750xx): 1 REQUIRED_FIELD_MISSING "
-        "(e.g. Required fields are missing: [Name]). CSV: "
+        "(e.g. Required fields are missing: [Name]:Name). CSV: "
     ) in message
 
 

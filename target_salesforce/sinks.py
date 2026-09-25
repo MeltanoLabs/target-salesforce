@@ -4,7 +4,6 @@ import csv
 import io
 import sys
 import tempfile
-import textwrap
 from collections import Counter
 from dataclasses import asdict
 from typing import ClassVar
@@ -46,7 +45,6 @@ class SalesforceSink(BatchSink):
     """Salesforce target sink class."""
 
     max_size = 5000
-    max_logged_message_length = 40
     valid_actions: ClassVar[list[str]] = [
         "insert",
         "update",
@@ -247,10 +245,7 @@ class SalesforceSink(BatchSink):
         for code, count in counts.most_common():
             example = examples[code]
             # sf__Error reads CODE:message:fields, with -- for no field.
-            message = example["sf__Error"].split(":", 1)[1].rpartition(":")[0]
-            message = textwrap.shorten(
-                message, self.max_logged_message_length, placeholder=" ..."
-            )
+            message = example["sf__Error"].split(":", 1)[1].removesuffix(":--")
             if id_field:
                 message = f"{example[id_field]}: {message}"
             summaries.append(f"{count} {code} (e.g. {message})")
