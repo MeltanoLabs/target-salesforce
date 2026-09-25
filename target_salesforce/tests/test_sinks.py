@@ -2,9 +2,8 @@
 
 import csv
 import logging
-import pathlib
-import tempfile
 from collections.abc import Callable
+from types import SimpleNamespace
 
 import pytest
 from simple_salesforce import bulk2
@@ -100,26 +99,63 @@ def test_the_library_default_rejects_a_lone_carriage_return():
         list(bulk2._split_csv(records=data))  # noqa: SLF001
 
 
-def test_the_failed_records_csv_goes_to_a_file_not_the_log(
-    caplog, monkeypatch, tmp_path
-):
-    """The log names a file that holds the CSV, and does not hold the CSV."""
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","001"\n'
+class _FailedRecordsBulkType:
+    """Stand-in for a Bulk 2.0 object that returns one failed-records CSV."""
 
-    class _FailedRecordsBulkType:
-        def get_failed_records(self, job_id: str) -> str:  # noqa: ARG002
-            return failed_csv
+    def __init__(self, failed_csv: str) -> None:
+        self.failed_csv = failed_csv
 
+    def get_failed_records(self, job_id: str) -> str:  # noqa: ARG002
+        return self.failed_csv
+
+
+def _log_failed_records(caplog, failed_csv: str, action: str = "update") -> str:
+    """Log the failures of job 750xx to Product2, and return the one error line."""
     sink = _make_sink("public-Product2")
+    sink._sf_client = SimpleNamespace(  # noqa: SLF001
+        bulk2_url="https://example.my.salesforce.com/services/data/v59.0/jobs/"
+    )
 
     with caplog.at_level(logging.ERROR):
-        sink._log_failed_records(_FailedRecordsBulkType(), "750xx", "update")  # noqa: SLF001
+        sink._log_failed_records(  # noqa: SLF001
+            _FailedRecordsBulkType(failed_csv), "750xx", action
+        )
 
     (message,) = [record.getMessage() for record in caplog.records]
-    dump = pathlib.Path(message.rsplit(" ", 1)[1])
-    assert message.startswith("Failed records for update Product2 (job 750xx): ")
-    assert dump.parent == tmp_path
-    assert dump.name.startswith("target-salesforce-Product2-750xx-")
-    assert dump.read_text() == failed_csv
-    assert "REQUIRED_FIELD_MISSING" not in message
+    return message
+
+
+def test_failed_records_are_counted_by_status_code(caplog):
+    """The most common code comes first, and each code names at most five ids."""
+    rows = [f'"","UNABLE_TO_LOCK_ROW:locked: 001x","a3b{i}"' for i in range(7)]
+    rows += ['"","INVALID_CROSS_REFERENCE_KEY:invalid cross reference id:--","a3bZ"']
+    failed_csv = '"sf__Id","sf__Error","id"\n' + "\n".join(rows) + "\n"
+
+    message = _log_failed_records(caplog, failed_csv)
+
+    assert message.startswith(
+        "Failed records for update Product2 (job 750xx): "
+        "7 UNABLE_TO_LOCK_ROW (a3b0, a3b1, a3b2, a3b3, a3b4); "
+        "1 INVALID_CROSS_REFERENCE_KEY (a3bZ)."
+    )
+
+
+def test_the_log_links_the_csv_that_salesforce_keeps(caplog):
+    """The error line ends with the REST URL of the job's failed results."""
+    failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","a3b"\n'
+
+    message = _log_failed_records(caplog, failed_csv)
+
+    assert message.endswith(
+        ". CSV: https://example.my.salesforce.com/services/data/v59.0"
+        "/jobs/ingest/750xx/failedResults/"
+    )
+
+
+def test_a_failed_insert_is_counted_without_ids(caplog):
+    """An insert sends no id, so the line holds the count alone."""
+    failed_csv = '"sf__Id","sf__Error","Name"\n"","REQUIRED_FIELD_MISSING::Name",""\n'
+
+    message = _log_failed_records(caplog, failed_csv, action="insert")
+
+    assert "(job 750xx): 1 REQUIRED_FIELD_MISSING. CSV: " in message
