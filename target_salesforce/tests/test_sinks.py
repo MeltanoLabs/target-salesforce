@@ -148,15 +148,22 @@ def test_failed_records_are_counted_by_status_code(caplog):
 
 
 def test_the_failed_records_csv_goes_to_a_temporary_file(caplog, tempdir):
-    """The error line ends with the path of a file that holds the CSV."""
-    failed_csv = '"sf__Id","sf__Error","Id"\n"","REQUIRED_FIELD_MISSING::Name","a3b"\n'
+    """The error line ends with the path of a file that holds the CSV unchanged.
+
+    Salesforce ends each line with CRLF, and a quoted value can hold a lone
+    carriage return. The file must keep both exactly as they arrived.
+    """
+    failed_csv = (
+        '"sf__Id","sf__Error","Id","Street"\r\n'
+        '"","REQUIRED_FIELD_MISSING::Name","a3b","Unit 1\rLondon"\r\n'
+    )
 
     message = _log_failed_records(caplog, failed_csv)
 
     dump = pathlib.Path(message.rsplit(". CSV: ", 1)[1])
     assert dump.parent == tempdir
     assert dump.name.startswith("target-salesforce-Product2-750xx-")
-    assert dump.read_text() == failed_csv
+    assert dump.read_bytes() == failed_csv.encode()
 
 
 @pytest.mark.usefixtures("tempdir")

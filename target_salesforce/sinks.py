@@ -246,6 +246,7 @@ class SalesforceSink(BatchSink):
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
+            newline="",
             prefix=f"target-salesforce-{self.object_name}-{job_id}-",
             suffix=".csv",
             delete=False,
