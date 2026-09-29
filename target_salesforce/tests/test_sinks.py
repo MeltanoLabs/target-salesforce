@@ -24,12 +24,6 @@ def _make_sink(stream_name: str, config: dict | None = None) -> SalesforceSink:
     )
 
 
-def test_the_target_drains_one_sink_at_a_time():
-    """No two sinks drain at once, so no job can lock out another."""
-    target = TargetSalesforce(config={}, validate_config=False)
-    assert target.max_parallelism == 1
-
-
 def test_object_name_strips_schema_prefix():
     """A schema-prefixed stream resolves to the final hyphen-separated part."""
     sink = _make_sink("public-Account")

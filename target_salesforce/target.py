@@ -121,24 +121,20 @@ class TargetSalesforce(Target):
         ),
     ).to_dict()
     default_sink_class = SalesforceSink
+    # Salesforce locks a master record while it updates one of its detail
+    # records, and automation on the master can hold that lock past the ten
+    # seconds that the detail update waits. A job on a detail object that runs
+    # beside a job on its master object therefore fails whole chunks. Automation
+    # can also lock records that no relationship names, so no two objects are
+    # known to be safe, and every sink drains in series.
+    max_parallelism = 1
 
     def __init__(self, **kwargs) -> None:
-        """Initialize the target and reject the deprecated is_sandbox setting.
-
-        The target drains one sink at a time.
-        """
+        """Initialize the target and reject the deprecated is_sandbox setting."""
         # Forward every argument so the target keeps accepting whatever the SDK
         # base class accepts. The SDK adds keyword arguments between releases,
         # and repeating the signature here makes each addition a break.
         super().__init__(**kwargs)
-
-        # Salesforce locks a master record while it updates one of its detail
-        # records, and automation on the master can hold that lock past the ten
-        # seconds that the detail update waits. A job on a detail object that
-        # runs beside a job on its master object therefore fails whole chunks.
-        # Automation can also lock records that no relationship names, so no
-        # two objects are known to be safe, and every sink drains in series.
-        self.max_parallelism = 1
 
         if self.config.get("is_sandbox") is not None:
             msg = (
