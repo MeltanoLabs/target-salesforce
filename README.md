@@ -87,6 +87,8 @@ Failed records for update Budget__c (job 750xx0000000001AAA). CSV: /tmp/target-s
 
 The temporary file lasts as long as the temporary directory does, so a run in an ephemeral environment loses it. Salesforce keeps its own copy of the CSV for 7 days, and `sf data bulk results --job-id <job_id> --target-org <org>` downloads it. The Setup page under [Troubleshooting](#troubleshooting) lists the job, but it shows the results of Bulk API `1.x` jobs only.
 
+In a master-detail relationship, Salesforce locks the master record while it updates a detail record, and automation on the master can hold that lock past the 10 seconds that the detail update waits. A Bulk job on a detail object that runs beside a job on its master object therefore fails whole chunks of records with `UNABLE_TO_LOCK_ROW`. Automation can also lock records that no relationship names, so the target cannot tell which objects are safe to load together, and it loads one stream at a time.
+
 ### Troubleshooting
 You can inspect the result of bulk API load jobs via the following URL:
 [DOMAIN].lightning.force.com/lightning/setup/AsyncApiJobStatus/home

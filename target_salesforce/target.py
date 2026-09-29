@@ -121,6 +121,13 @@ class TargetSalesforce(Target):
         ),
     ).to_dict()
     default_sink_class = SalesforceSink
+    # Salesforce locks a master record while it updates one of its detail
+    # records, and automation on the master can hold that lock past the ten
+    # seconds that the detail update waits. A job on a detail object that runs
+    # beside a job on its master object therefore fails whole chunks. Automation
+    # can also lock records that no relationship names, so no two objects are
+    # known to be safe, and every sink drains in series.
+    max_parallelism = 1
 
     def __init__(self, **kwargs) -> None:
         """Initialize the target and reject the deprecated is_sandbox setting."""
